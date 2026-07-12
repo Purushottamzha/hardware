@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import * as mqtt from 'mqtt';
 import { AttendanceService } from '../attendance/attendance.service';
+import { loadSecret } from '../common/config/secret-loader';
 
 @Injectable()
 export class MqttService implements OnModuleInit {
@@ -13,7 +14,7 @@ export class MqttService implements OnModuleInit {
     const host = process.env.MOSQUITTO_HOST || 'mosquitto';
     const port = parseInt(process.env.MOSQUITTO_PORT || '8883', 10);
     const username = process.env.MOSQUITTO_USERNAME || 'backend';
-    const password = process.env.MOSQUITTO_PASSWORD || '';
+    const password = process.env.MOSQUITTO_PASSWORD || loadSecret('MOSQUITTO_PASSWORD') || '';
     const caPath = process.env.MOSQUITTO_CA_CERT || '/mosquitto/certs/ca.crt';
 
     this.client = mqtt.connect(`mqtts://${host}:${port}`, {

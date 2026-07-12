@@ -1,0 +1,7 @@
+yourdomain.example.com {
+    reverse_proxy backend:3000
+}
+
+dashboard.yourdomain.example.com {
+    reverse_proxy dashboard:80
+}

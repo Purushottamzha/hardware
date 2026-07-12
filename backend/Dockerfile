@@ -1,7 +1,7 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci
+RUN npm install
 COPY . .
 RUN npx prisma generate
 RUN npm run build
@@ -12,6 +12,8 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/package*.json ./
-RUN npx prisma generate
+COPY --from=builder /app/tsconfig*.json ./
+RUN npm install
 EXPOSE 3000
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main"]
+RUN apk add --no-cache openssl
+CMD ["sh", "-c", "npx prisma db push && npx prisma db seed || true && node dist/src/main"]

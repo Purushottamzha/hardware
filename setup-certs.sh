@@ -22,9 +22,21 @@ rm "$CERT_DIR/server.csr"
 
 # Mosquitto password file — create user entries
 touch "$CERT_DIR/passwd"
+MQTT_PASS="$(openssl rand -hex 16)"
 echo "Creating Mosquitto password entries..."
-docker run --rm -v "$CERT_DIR:/certs" eclipse-mosquitto:2 mosquitto_passwd -b /certs/passwd backend "$(openssl rand -hex 16)"
-echo "Created 'backend' user with random password."
+docker run --rm -v "$CERT_DIR:/certs" eclipse-mosquitto:2 mosquitto_passwd -b /certs/passwd backend "$MQTT_PASS"
+echo "Created 'backend' user with password: $MQTT_PASS"
+
+# Update .env with the generated password
+ENV_FILE="$(cd "$(dirname "$0")" && pwd)/.env"
+if [ -f "$ENV_FILE" ]; then
+  if grep -q "MOSQUITTO_PASSWORD=" "$ENV_FILE"; then
+    sed -i "s/^MOSQUITTO_PASSWORD=.*/MOSQUITTO_PASSWORD=$MQTT_PASS/" "$ENV_FILE"
+  else
+    echo "MOSQUITTO_PASSWORD=$MQTT_PASS" >> "$ENV_FILE"
+  fi
+  echo "Updated .env with MOSQUITTO_PASSWORD=$MQTT_PASS"
+fi
 
 echo ""
 echo "Certificates generated in $CERT_DIR"

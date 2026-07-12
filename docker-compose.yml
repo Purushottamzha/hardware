@@ -23,10 +23,8 @@ services:
       - "8883:8883"
     volumes:
       - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf
-      - ./mosquitto/certs:/mosquitto/certs:ro
+      - ./mosquitto/certs:/mosquitto/certs:rw
       - mosquitto_data:/mosquitto/data
-    depends_on:
-      - postgres
 
   backend:
     build:
@@ -46,6 +44,8 @@ services:
       - DASHBOARD_ORIGIN=${DASHBOARD_ORIGIN:-http://localhost:5173}
       - PHOTO_RETENTION_DAYS=${PHOTO_RETENTION_DAYS:-30}
       - NODE_ENV=${NODE_ENV:-development}
+      - ADMIN_PHONE=${ADMIN_PHONE:-+977-9800000000}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
     volumes:
       - ./mosquitto/certs:/mosquitto/certs:ro
     ports:
@@ -60,10 +60,10 @@ services:
     build:
       context: ./dashboard
       dockerfile: Dockerfile
-    environment:
-      - VITE_API_URL=${VITE_API_URL:-https://localhost:3000}
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
     ports:
-      - "5173:5173"
+      - "5173:80"
     depends_on:
       - backend
 

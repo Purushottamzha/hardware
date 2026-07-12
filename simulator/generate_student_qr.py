@@ -18,7 +18,7 @@ import sys
 import qrcode
 import requests
 
-API_URL = "https://localhost:3000"
+API_URL = "http://localhost:3000"
 
 
 def get_token(student_id: str, token: str) -> dict:
@@ -27,7 +27,6 @@ def get_token(student_id: str, token: str) -> dict:
     resp = requests.post(
         f"{API_URL}/students/{student_id}/token",
         headers=headers,
-        verify=False,  # self-signed cert
     )
 
     if resp.status_code == 401:

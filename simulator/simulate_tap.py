@@ -129,20 +129,31 @@ def sign_payload(payload_without_sig, secret):
 
 def publish_mqtt(cfg, payload):
     """Publish over TLS MQTT with retain=False, QoS 1."""
-    client = mqtt.Client(client_id=f"sim-{cfg['deviceId']}-{int(time.time())}")
+    client = mqtt.Client(
+        client_id=f"sim-{cfg['deviceId']}-{int(time.time())}",
+        callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
+    )
     client.tls_set(cfg["broker"]["caCert"])
+    client.tls_insecure_set(True)
     client.username_pw_set(cfg["broker"]["username"], cfg["broker"]["password"])
 
     try:
-        client.connect(cfg["broker"]["host"], cfg["broker"]["port"], 60)
+        client.connect(cfg["broker"]["host"], cfg["broker"]["port"], 10)
+        client.loop_start()
         topic = cfg["topic"].replace("{deviceId}", cfg["deviceId"])
         info = client.publish(topic, json.dumps(payload), qos=1, retain=False)
-        info.wait_for_publish()
+        info.wait_for_publish(timeout=10)
         print(f"[OK] Published to {topic}")
+        client.loop_stop()
         client.disconnect()
         return True
     except Exception as e:
         print(f"[ERROR] MQTT publish failed: {e}")
+        try:
+            client.loop_stop()
+            client.disconnect()
+        except:
+            pass
         return False
 
 
@@ -160,9 +171,8 @@ def simulate_tap(args):
 
     # --- Replay mode ---
     if args.replay:
-        print("\n[REPLAY MODE] Re-publishing last captured payload...")
+        print("\n[REPLAY MODE] Re-publishing last captured payload verbatim...")
         payload = load_last_payload()
-        payload["timestamp"] = int(time.time() * 1000)  # update timestamp
         publish_mqtt(cfg, payload)
         return
 

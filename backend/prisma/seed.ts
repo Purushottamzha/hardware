@@ -1,17 +1,27 @@
+import * as fs from 'node:fs';
 import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+
+function loadSecret(name: string): string {
+  const fileVar = `${name}_FILE`;
+  const filePath = process.env[fileVar];
+  if (filePath) {
+    try { return fs.readFileSync(filePath, 'utf8').trim(); } catch {}
+  }
+  return process.env[name] || '';
+}
 
 async function main() {
   const prisma = new PrismaClient();
 
   const phone = process.env.ADMIN_PHONE || '+977-9800000000';
-  const password = process.env.ADMIN_PASSWORD || 'change_me_in_production';
+  const password = loadSecret('ADMIN_PASSWORD') || 'change_me_in_production';
   const salt = await bcrypt.genSalt(12);
   const passwordHash = await bcrypt.hash(password, salt);
 
   await prisma.adminUser.upsert({
     where: { phone },
-    update: {},
+    update: { passwordHash },
     create: { phone, passwordHash },
   });
 

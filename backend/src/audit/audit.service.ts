@@ -11,12 +11,13 @@ export class AuditService {
       orderBy: { id: 'desc' },
     });
     const prevHash = lastLog ? lastLog.hash : '0';
+    const now = new Date();
 
-    const hashInput = `${prevHash}|${action}|${targetId || ''}|${new Date().toISOString()}`;
+    const hashInput = `${prevHash}|${action}|${targetId || ''}|${now.toISOString()}`;
     const hash = crypto.createHash('sha256').update(hashInput).digest('hex');
 
     return this.prisma.auditLog.create({
-      data: { adminId, action, targetId, prevHash, hash },
+      data: { adminId, action, targetId, prevHash, hash, createdAt: now },
     });
   }
 

@@ -1,0 +1,10 @@
+[Unit]
+Description=SafeRide Nepal hourly SecurityEvent alert check
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/saferide-check-alerts
+User=root
+Group=root

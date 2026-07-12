@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import * as crypto from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { loadSecret } from '../common/config/secret-loader';
 
 @Injectable()
 export class StudentsService {
@@ -23,7 +24,7 @@ export class StudentsService {
     const student = await this.prisma.student.findUnique({ where: { id: studentId } });
     if (!student) throw new NotFoundException('Student not found');
 
-    const secret = process.env.STUDENT_TOKEN_SECRET;
+    const secret = process.env.STUDENT_TOKEN_SECRET || loadSecret('STUDENT_TOKEN_SECRET');
     if (!secret) throw new Error('STUDENT_TOKEN_SECRET not configured');
 
     const payload = JSON.stringify({ studentId, name: student.name, issuedAt: Date.now() });
@@ -36,7 +37,7 @@ export class StudentsService {
   async verifyToken(tokenBase64: string): Promise<{ studentId: string; name: string } | null> {
     try {
       const decoded = JSON.parse(Buffer.from(tokenBase64, 'base64').toString('utf8'));
-      const secret = process.env.STUDENT_TOKEN_SECRET;
+      const secret = process.env.STUDENT_TOKEN_SECRET || loadSecret('STUDENT_TOKEN_SECRET');
       if (!secret) throw new Error('STUDENT_TOKEN_SECRET not configured');
 
       const expectedHmac = crypto.createHmac('sha256', secret).update(decoded.payload).digest('hex');

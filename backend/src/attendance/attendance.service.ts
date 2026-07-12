@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { DevicesService } from '../devices/devices.service';
 import { StudentsService } from '../students/students.service';
 import { EventsGateway } from '../events-gateway/events.gateway';
+import { AuditService } from '../audit/audit.service';
 
 const TIME_WINDOW_MS = 60_000;
 const DEBOUNCE_MS = 10_000;
@@ -51,6 +52,7 @@ export class AttendanceService implements OnModuleInit {
     private devicesService: DevicesService,
     private studentsService: StudentsService,
     private eventsGateway: EventsGateway,
+    private auditService: AuditService,
   ) {}
 
   async onModuleInit() {
@@ -274,23 +276,7 @@ export class AttendanceService implements OnModuleInit {
     const config = STATE_SEQUENCE[currentState];
     if (!config) return false;
 
-    if (currentState === 'NOT_BOARDED') {
-      return true;
-    }
-
-    if (currentState === 'BOARDED') {
-      return true;
-    }
-
-    if (currentState === 'ARRIVED_SCHOOL') {
-      return true;
-    }
-
-    if (currentState === 'DEPARTED') {
-      return true;
-    }
-
-    return false;
+    return config.nextStates.includes(nextEventType);
   }
 
   private checkTimeWindow(currentState: string, timestampMs: number): boolean {
@@ -321,15 +307,7 @@ export class AttendanceService implements OnModuleInit {
         data: { status: 'suspended', invalidSigCount: newCount },
       });
 
-      await this.prisma.auditLog.create({
-        data: {
-          adminId: 0,
-          action: 'AUTO_SUSPENDED',
-          targetId: device.id,
-          prevHash: await this.getLastAuditHash(),
-          hash: '',
-        },
-      });
+      await this.auditService.log(0, 'AUTO_SUSPENDED', device.id);
 
       await this.logSecurityEvent('AUTO_SUSPENDED', device.id, { deviceId: device.id });
       this.logger.warn(`Device ${device.id} auto-suspended after ${newCount} invalid signatures`);
@@ -342,11 +320,6 @@ export class AttendanceService implements OnModuleInit {
         },
       });
     }
-  }
-
-  private async getLastAuditHash(): Promise<string> {
-    const last = await this.prisma.auditLog.findFirst({ orderBy: { id: 'desc' } });
-    return last ? last.hash : '0';
   }
 
   private async logSecurityEvent(type: string, deviceId: string | undefined, rawPayload: any) {

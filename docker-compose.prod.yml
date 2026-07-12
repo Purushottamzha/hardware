@@ -1,0 +1,115 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: saferide
+      POSTGRES_DB: saferide
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U saferide"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    secrets:
+      - db_password
+    networks:
+      - internal
+    restart: unless-stopped
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    ports:
+      - "8883:8883"
+    volumes:
+      - ./mosquitto/mosquitto.prod.conf:/mosquitto/config/mosquitto.conf
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - mosquitto_data:/mosquitto/data
+    networks:
+      - internal
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./ops/Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - internal
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL=postgresql://saferide:${DB_PASSWORD?}@postgres:5432/saferide
+      - ENCRYPTION_KEY_FILE=/run/secrets/encryption_key
+      - JWT_SECRET_FILE=/run/secrets/jwt_secret
+      - STUDENT_TOKEN_SECRET_FILE=/run/secrets/student_token_secret
+      - JWT_EXPIRY=8h
+      - MOSQUITTO_HOST=mosquitto
+      - MOSQUITTO_PORT=8883
+      - MOSQUITTO_USERNAME=backend
+      - MOSQUITTO_PASSWORD_FILE=/run/secrets/mosquitto_password
+      - MOSQUITTO_CA_CERT=/etc/letsencrypt/live/${DOMAIN?}/fullchain.pem
+      - DASHBOARD_ORIGIN=https://dashboard.${DOMAIN?}
+      - PHOTO_RETENTION_DAYS=30
+      - NODE_ENV=production
+      - ADMIN_PHONE=${ADMIN_PHONE?}
+      - ADMIN_PASSWORD_FILE=/run/secrets/admin_password
+    secrets:
+      - encryption_key
+      - jwt_secret
+      - student_token_secret
+      - mosquitto_password
+      - admin_password
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+    networks:
+      - internal
+    restart: unless-stopped
+
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: https://${DOMAIN?}
+    depends_on:
+      - backend
+    networks:
+      - internal
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  mosquitto_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  internal:
+    driver: bridge
+
+secrets:
+  db_password:
+    file: ./secrets/db_password
+  encryption_key:
+    file: ./secrets/encryption_key
+  jwt_secret:
+    file: ./secrets/jwt_secret
+  student_token_secret:
+    file: ./secrets/student_token_secret
+  mosquitto_password:
+    file: ./secrets/mosquitto_password
+  admin_password:
+    file: ./secrets/admin_password

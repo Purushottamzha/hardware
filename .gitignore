@@ -6,6 +6,7 @@
 mosquitto/certs/
 config.json
 secrets.h
+secrets/
 
 # Node
 node_modules/
@@ -17,6 +18,9 @@ __pycache__/
 
 # QR output
 qr_*.png
+
+# Simulator artifacts
+*.last_payload.json
 
 # IDE
 .vscode/

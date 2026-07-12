@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import * as crypto from 'node:crypto';
+import { loadSecret } from '../config/secret-loader';
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 16;
@@ -10,7 +11,7 @@ export class SecretCipherService {
   private readonly key: Buffer;
 
   constructor() {
-    const raw = process.env.ENCRYPTION_KEY;
+    const raw = loadSecret('ENCRYPTION_KEY');
     if (!raw || raw.length < 32) {
       throw new Error('ENCRYPTION_KEY must be at least 32 hex characters');
     }

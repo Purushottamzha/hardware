@@ -83,6 +83,69 @@ Any captured photos deleted after configurable retention window (default 30 days
 ### 20. Raw Payload Safety
 Security Log UI renders raw payloads as escaped plain text in `<pre>` tags. Explicitly avoids `dangerouslySetInnerHTML`.
 
+---
+
+## Production Deployment Controls
+
+This section maps the production deployment (via `docker-compose.prod.yml`
+and `ops/` runbook) against applicable legal and regulatory frameworks.
+
+### Nepal IT Act 2063 (2008) — Key Provisions Addressed
+
+| Provision | How Addressed |
+|-----------|---------------|
+| **Sec 45 — Unauthorized access to computer material** | Per-device MQTT auth + JWT-gated API + bcrypt account lockout. `fail2ban` adds host-level brute-force defense. |
+| **Sec 46 — Unauthorized access to computer program** | Docker secrets (`/run/secrets/*`) keep keys off the filesystem in plaintext. `ENCRYPTION_KEY` only in memory. |
+| **Sec 47 — Damage to computer system** | Backups encrypted and stored off-host. Restorable via documented drill (`ops/restore-drill.sh`). DS_GB impact limited to one bus's counter window. |
+| **Sec 57 — Confidentiality of data** | AES-256-GCM at rest for device secrets. TLS 1.2+ in transit. Disk encryption at rest (LUKS or provider option). |
+
+**Not fully addressed:** Formal incident response plan with defined roles
+and notification timelines. The alerting script (`ops/check-alerts.sh`)
+detects incidents but does not enforce a documented response procedure.
+
+### ISO 27001:2022 — Control Families Addressed
+
+| Annex A Control | How Addressed |
+|-----------------|---------------|
+| **5.1 — Information security policies** | Enforced by code (guards, validators, state machine). Documented in this file. |
+| **5.15 — Access control** | JWT + per-device MQTT creds + AdminUser table with phone/password. |
+| **5.20 — Non-conformities** | SecurityEvent log captures every invalid attempt with full payload context. |
+| **5.25 — Risk assessment** | Threat model documented above. Residual risks (physical device extraction, GPS spoofing) explicitly accepted. |
+| **5.29 — Security in development** | `class-validator` DTOs, whitelist-only validation, global JWT guard (`@Public()` opt-out). |
+| **5.33 — Protection of records** | Hash-chained AuditLog (tamper-evident). Photo auto-deletion after 30 days. |
+| **6.8 — Event logging** | SecurityEvent + AuditLog + AttendanceEvent. Hourly spike checker (`check-alerts.sh`). |
+| **7.1 — Operating procedures** | `ops/README.md` runbook covers deploy, backup, restore, rotation. |
+| **7.2 — Change management** | Image-based deploys (Docker); `docker-compose.prod.yml` is the sole production source of truth. |
+| **7.10 — Storage medium disposal** | `mosquitto_data` volume from old deployments wiped on `down -v`. Photo deletion job runs daily. |
+| **8.1 — Cryptographic controls** | AES-256-GCM (device secrets), HMAC-SHA256 (payload signatures + student tokens), bcrypt (passwords). |
+| **8.3 — Secure authentication** | JWT (admin), HMAC token (student QR), per-device MQTT password (`allow_anonymous false`). |
+| **8.10 — Redundancy** | Backups stored off-host. Restore procedure tested via drill. |
+| **8.11 — Backup** | Nightly encrypted (`age`) `pg_dump` with 30-day rotation and off-host copy. |
+| **8.16 — Log retention** | `logrotate` caps backend logs at 30 daily rotations. Docker logs at 3 files × 10 MB. |
+
+**Not addressed:** Formal business continuity plan (BCP), regular penetration
+testing schedule, supplier/vendor risk assessments (no third-party
+processors).
+
+### GDPR-Style Principles (Reference for Nepal Deployment)
+
+Even without GDPR applicability in Nepal, its data-protection principles
+provide useful design guidance:
+
+| Principle | How Addressed |
+|-----------|---------------|
+| **Data minimization** | Only essential PII stored (student name, parent phone). No addresses, no biometrics in DB. Photos auto-deleted after 30 days. |
+| **Purpose limitation** | Attendance tracking only. No data shared with third parties. |
+| **Storage limitation** | Photo retention capped at 30 days. Audit log trimmed to last 100 entries in API (DB retains all). Backups rotated at 30 days. |
+| **Integrity & confidentiality** | TLS + encryption at rest + access controls + tamper-evident audit log. |
+| **Accountability** | Hash-chained AuditLog documents all admin actions. `/audit/verify` detects tampering. |
+
+**Not addressed:** Formal privacy notice (not applicable for a school-internal
+demo, but needed before real deployment). Data subject access request (DSAR)
+procedure.
+
+---
+
 ## Security Architecture Diagram
 
 ```
