@@ -237,14 +237,19 @@ export class AttendanceService implements OnModuleInit {
       await this.studentsService.updateState(student.id, nextEventType);
     }
 
-    const eventTime = new Date(payload.timestamp).toLocaleTimeString();
     this.eventsGateway.broadcastEvent({
+      studentId: student.id,
       student: student.name,
+      deviceId: payload.deviceId,
       event: verified ? nextEventType : 'REJECTED',
-      time: eventTime,
+      eventTimestamp: event.createdAt.toISOString(),
       lat: payload.lat,
       lon: payload.lon,
       status: verified ? (flagged ? 'warning' : 'success') : 'error',
+      verified,
+      flagged,
+      flagReason: flagged ? flagReason ?? null : null,
+      rejectionReason: rejectionReason ?? null,
     });
 
     return { accepted: verified, reason: verified ? 'OK' : rejectionReason };
@@ -342,6 +347,66 @@ export class AttendanceService implements OnModuleInit {
       include: { student: true, device: true },
       orderBy: { createdAt: 'desc' },
       take: 100,
+    });
+  }
+
+  async getOverview() {
+    const students = await this.prisma.student.findMany({
+      select: { id: true, name: true, currentState: true },
+    });
+
+    const studentsWithLastEvent = await Promise.all(
+      students.map(async (s) => {
+        const lastEvent = await this.prisma.attendanceEvent.findFirst({
+          where: { studentId: s.id },
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            eventType: true,
+            eventTimestamp: true,
+            createdAt: true,
+            lat: true,
+            lon: true,
+            verified: true,
+            flagged: true,
+            flagReason: true,
+            rejectionReason: true,
+          },
+        });
+        return { ...s, lastEvent };
+      }),
+    );
+
+    const devices = await this.prisma.device.findMany({
+      select: { id: true, busId: true, status: true, lastSeenCounter: true },
+    });
+
+    return { students: studentsWithLastEvent, devices };
+  }
+
+  async getTodayTimeline(studentId: string) {
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+
+    return this.prisma.attendanceEvent.findMany({
+      where: {
+        studentId,
+        createdAt: { gte: startOfDay },
+      },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        id: true,
+        eventType: true,
+        eventTimestamp: true,
+        createdAt: true,
+        lat: true,
+        lon: true,
+        verified: true,
+        flagged: true,
+        flagReason: true,
+        rejectionReason: true,
+        deviceId: true,
+      },
     });
   }
 }

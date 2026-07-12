@@ -20,12 +20,18 @@ export class EventsGateway implements OnGatewayInit {
   }
 
   broadcastEvent(data: {
+    studentId: string;
     student: string;
+    deviceId: string;
     event: string;
-    time: string;
+    eventTimestamp: string;
     lat: number;
     lon: number;
     status: string;
+    verified: boolean;
+    flagged: boolean;
+    flagReason: string | null;
+    rejectionReason: string | null;
   }) {
     this.server?.emit('attendanceEvent', data);
   }

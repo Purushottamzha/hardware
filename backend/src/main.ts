@@ -6,7 +6,10 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  app.use(helmet());
+  app.use(helmet({
+    contentSecurityPolicy: false,
+    strictTransportSecurity: false,
+  }));
 
   app.enableCors({
     origin: process.env.DASHBOARD_ORIGIN || 'http://localhost:5173',
