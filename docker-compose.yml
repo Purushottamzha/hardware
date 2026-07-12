@@ -1,0 +1,72 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: saferide
+      POSTGRES_PASSWORD: saferide_pass
+      POSTGRES_DB: saferide
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U saferide"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "5432:5432"
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    ports:
+      - "8883:8883"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - ./mosquitto/certs:/mosquitto/certs:ro
+      - mosquitto_data:/mosquitto/data
+    depends_on:
+      - postgres
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL=postgresql://saferide:saferide_pass@postgres:5432/saferide
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_EXPIRY=${JWT_EXPIRY}
+      - MOSQUITTO_HOST=mosquitto
+      - MOSQUITTO_PORT=8883
+      - MOSQUITTO_USERNAME=${MOSQUITTO_USERNAME}
+      - MOSQUITTO_PASSWORD=${MOSQUITTO_PASSWORD}
+      - MOSQUITTO_CA_CERT=/mosquitto/certs/ca.crt
+      - STUDENT_TOKEN_SECRET=${STUDENT_TOKEN_SECRET}
+      - DASHBOARD_ORIGIN=${DASHBOARD_ORIGIN:-http://localhost:5173}
+      - PHOTO_RETENTION_DAYS=${PHOTO_RETENTION_DAYS:-30}
+      - NODE_ENV=${NODE_ENV:-development}
+    volumes:
+      - ./mosquitto/certs:/mosquitto/certs:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    environment:
+      - VITE_API_URL=${VITE_API_URL:-https://localhost:3000}
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+  mosquitto_data:

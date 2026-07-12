@@ -1,0 +1,27 @@
+# Secrets — never commit
+.env
+*.pem
+*.key
+*.cert
+mosquitto/certs/
+config.json
+secrets.h
+
+# Node
+node_modules/
+dist/
+
+# Python
+__pycache__/
+*.pyc
+
+# QR output
+qr_*.png
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

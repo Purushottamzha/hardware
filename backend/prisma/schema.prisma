@@ -1,0 +1,72 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Device {
+  id                 String             @id
+  encryptedSecret    String
+  busId              String
+  status             String             @default("active")
+  lastSeenCounter    Int                @default(0)
+  invalidSigCount    Int                @default(0)
+  invalidSigWindowStart DateTime?
+  events             AttendanceEvent[]
+}
+
+model Student {
+  id           String             @id @default(cuid())
+  name         String
+  currentState String             @default("NOT_BOARDED")
+  events       AttendanceEvent[]
+}
+
+model AttendanceEvent {
+  id              Int      @id @default(autoincrement())
+  deviceId        String
+  device          Device   @relation(fields: [deviceId], references: [id])
+  studentId       String
+  student         Student  @relation(fields: [studentId], references: [id])
+  eventType       String
+  lat             Float
+  lon             Float
+  eventTimestamp  DateTime
+  deviceCounter   Int
+  verified        Boolean  @default(false)
+  flagged         Boolean  @default(false)
+  flagReason      String?
+  rejectionReason String?
+  photoPath       String?
+  createdAt       DateTime @default(now())
+}
+
+model SecurityEvent {
+  id         Int      @id @default(autoincrement())
+  type       String
+  deviceId   String?
+  rawPayload Json
+  createdAt  DateTime @default(now())
+}
+
+model AdminUser {
+  id             Int        @id @default(autoincrement())
+  phone          String     @unique
+  passwordHash   String
+  role           String     @default("admin")
+  failedAttempts Int        @default(0)
+  lockedUntil    DateTime?
+}
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  adminId   Int
+  action    String
+  targetId  String?
+  prevHash  String
+  hash      String
+  createdAt DateTime @default(now())
+}

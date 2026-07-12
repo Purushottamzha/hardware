@@ -1,0 +1,13 @@
+{
+  "deviceId": "bus-ba2kha4521-door-SIM",
+  "deviceSecret": "",
+  "broker": {
+    "host": "localhost",
+    "port": 8883,
+    "username": "",
+    "password": "",
+    "caCert": "../mosquitto/certs/ca.crt"
+  },
+  "topic": "saferide/hardware/{deviceId}/attendance",
+  "counter": 0
+}
