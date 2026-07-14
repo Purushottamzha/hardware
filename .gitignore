@@ -32,7 +32,9 @@ student_qr*.png
 
 # Simulator config variants (example is tracked)
 simulator/config.*.json
+simulator/termux_config.json
 !simulator/config.example.json
+!simulator/termux_config.example.json
 
 # IDE
 .vscode/

@@ -1,0 +1,12 @@
+{
+  "deviceId": "bus-xxx-door-001",
+  "deviceSecret": "paste-device-secret-hex-here",
+  "mqttUsername": "bus-xxx-door-001",
+  "mqttPassword": "paste-mqtt-password-here",
+  "caCertPath": "/data/data/com.termux/files/home/ca.crt",
+  "brokerHost": "192.168.1.xxx",
+  "brokerPort": 8883,
+  "counter": 0,
+  "lat": 27.6939,
+  "lon": 85.3374
+}
