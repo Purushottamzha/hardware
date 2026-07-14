@@ -43,13 +43,13 @@ services:
       - STUDENT_TOKEN_SECRET=${STUDENT_TOKEN_SECRET}
       - DASHBOARD_ORIGIN=${DASHBOARD_ORIGIN:-http://localhost:5173}
       - PHOTO_RETENTION_DAYS=${PHOTO_RETENTION_DAYS:-30}
+      - MQTT_TLS_REJECT_UNAUTHORIZED=${MQTT_TLS_REJECT_UNAUTHORIZED:-true}
       - NODE_ENV=${NODE_ENV:-development}
       - ADMIN_PHONE=${ADMIN_PHONE:-+977-9800000000}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
     volumes:
       - ./mosquitto/certs:/mosquitto/certs:ro
-    ports:
-      - "3000:3000"
+      - photo_uploads:/app/uploads
     depends_on:
       postgres:
         condition: service_healthy
@@ -61,12 +61,35 @@ services:
       context: ./dashboard
       dockerfile: Dockerfile
       args:
-        VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
-    ports:
-      - "5173:80"
+        VITE_API_URL: ${VITE_API_URL:-https://localhost/api}
     depends_on:
       - backend
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "443:443"
+    volumes:
+      - ./ops/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./mosquitto/certs:/certs:ro
+    depends_on:
+      - dashboard
+      - backend
+
+  simulator:
+    build:
+      context: ./simulator
+      dockerfile: Dockerfile
+    profiles:
+      - tools
+    volumes:
+      - ./simulator/config.docker.json:/app/config.json
+      - ./mosquitto/certs:/app/mosquitto/certs:ro
+    entrypoint: ["python", "simulate_tap.py"]
+    depends_on:
+      - mosquitto
 
 volumes:
   pgdata:
   mosquitto_data:
+  photo_uploads:

@@ -42,6 +42,8 @@ model AttendanceEvent {
   rejectionReason String?
   photoPath       String?
   createdAt       DateTime @default(now())
+
+  @@unique([deviceId, deviceCounter])
 }
 
 model SecurityEvent {

@@ -74,8 +74,8 @@ Dashboard origin only, not `*`.
 ### 17. Hash-Chained Audit Log
 Each `AuditLog` row includes `prevHash` (hash of previous row) and `hash` (hash of content + prevHash). Tampering breaks the chain, detectable via `GET /audit/verify`.
 
-### 18. Photo Auto-Deletion
-Any captured photos deleted after configurable retention window (default 30 days) via scheduled job. Children's biometric-adjacent data is minimized.
+### 18. Photo-Verified Attendance (Detective Control)
+When a student taps, the device captures a photo (QVGA JPEG, ~5-15 KB). The attendance event is published immediately over MQTT (small, fast, reliable). The photo is uploaded separately via an authenticated HTTPS multipart POST to `POST /attendance/photo`, referenced by `deviceId` + `counter`. If the upload fails, the attendance event still lands — the photo is a best-effort secondary channel. Photos are served as static assets under `/photos/` and auto-deleted after a configurable retention window (default 30 days). This is a **detective** control: a cloned QR still verifies, but the photo lets an admin later detect anomalies (e.g., same card scanned on two buses simultaneously).
 
 ### 19. Generic Error Responses
 `NODE_ENV=production` suppresses stack traces and internal error details.

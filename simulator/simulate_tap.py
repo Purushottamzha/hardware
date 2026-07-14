@@ -23,6 +23,7 @@ import time
 from pathlib import Path
 
 import paho.mqtt.client as mqtt
+import requests
 
 CONFIG_PATH = Path(__file__).parent / "config.json"
 LAST_PAYLOAD_PATH = Path(__file__).parent / ".last_payload.json"
@@ -38,6 +39,10 @@ def load_config():
 
     if not cfg.get("deviceSecret"):
         print("[ERROR] deviceSecret is empty. Fill it in config.json.")
+        sys.exit(1)
+
+    if not cfg.get("apiBaseUrl"):
+        print("[ERROR] apiBaseUrl is empty. Add it to config.json (e.g. \"apiBaseUrl\": \"http://localhost:3000\")")
         sys.exit(1)
 
     return cfg
@@ -157,6 +162,56 @@ def publish_mqtt(cfg, payload):
         return False
 
 
+def sign_photo_upload(device_id, counter, photo_timestamp, secret):
+    """Compute HMAC-SHA256 over {deviceId, counter, photoTimestamp}."""
+    canonical = build_canonical_json({
+        "deviceId": device_id,
+        "counter": counter,
+        "photoTimestamp": photo_timestamp,
+    })
+    return hmac.new(
+        secret.encode("utf-8"),
+        canonical.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def upload_photo(cfg, photo_path, counter, tamper=False):
+    """Upload captured photo to backend via HTTP multipart POST, HMAC-signed."""
+    backend_url = cfg.get("apiBaseUrl")
+    if not backend_url:
+        print("[ERROR] apiBaseUrl not set in config.json. Add it: \"apiBaseUrl\": \"http://your-backend:3000\"")
+        return
+    photo_timestamp = int(time.time() * 1000)
+    sig = sign_photo_upload(cfg["deviceId"], counter, photo_timestamp, cfg["deviceSecret"])
+
+    if tamper:
+        sig = "0" * 64
+        print(f"[TAMPER] Photo signature corrupted: {sig[:16]}...")
+
+    try:
+        with open(photo_path, "rb") as f:
+            files = {"photo": f}
+            data = {
+                "deviceId": cfg["deviceId"],
+                "counter": str(counter),
+                "photoSignature": sig,
+                "photoTimestamp": str(photo_timestamp),
+            }
+            resp = requests.post(
+                f"{backend_url}/attendance/photo",
+                files=files,
+                data=data,
+                timeout=15,
+            )
+        if resp.status_code == 201 or resp.status_code == 200:
+            print(f"[OK] Photo uploaded: {resp.json().get('photoPath')}")
+        else:
+            print(f"[WARN] Photo upload failed ({resp.status_code}): {resp.text[:200]}")
+    except Exception as e:
+        print(f"[WARN] Photo upload error: {e}")
+
+
 def poll_status():
     """Poll backend status endpoint to see if event was accepted."""
     print("[NOTE] Check the Live Feed dashboard to verify acceptance.")
@@ -237,6 +292,11 @@ def simulate_tap(args):
 
     # --- Publish ---
     publish_mqtt(cfg, payload)
+
+    # --- Upload photo (non-blocking, best-effort, HMAC-signed) ---
+    if photo_path and photo_path.exists():
+        upload_photo(cfg, photo_path, cfg["counter"], tamper=args.tamper)
+
     poll_status()
 
 

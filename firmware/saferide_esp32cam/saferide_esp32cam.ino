@@ -1,5 +1,5 @@
 /**
- * SafeRide Nepal — ESP32-CAM Attendance Device (Phase 2 Skeleton)
+ * SafeRide Nepal — ESP32-CAM Attendance Device (Phase 2)
  *
  * Implements the same MQTT contract as the Python simulator.
  * Intended for ESP32-CAM with OV2640 camera + GPS module.
@@ -26,6 +26,8 @@
 //   #define WIFI_PASS "your-password"
 //   #define MQTT_USER "device-mqtt-username"
 //   #define MQTT_PASS "device-mqtt-password"
+//   #define BACKEND_HOST "your-backend"
+//   #define BACKEND_PORT 3000
 #include "secrets.h"
 
 // ---- Configuration ----
@@ -35,12 +37,15 @@
 #define MQTT_TOPIC_SUFFIX "/attendance"
 #define GPS_BAUD 9600
 #define PIR_PIN 13
+#define NTP_SERVER "pool.ntp.org"
+#define TZ_OFFSET_SEC 19800  // UTC+5:45 (Nepal)
 
 WiFiClientSecure wifiClient;
 PubSubClient mqttClient(wifiClient);
 
 long counter = 0;
 unsigned long lastTapTime = 0;
+bool ntpSynced = false;
 
 // Forward declarations
 bool captureFrame(uint8_t **buf, size_t *len);
@@ -50,6 +55,9 @@ void buildPayload(const char *token, float lat, float lon, unsigned long ts,
                   long ctr, char *payloadOut, size_t maxLen);
 void signPayload(const char *payload, const char *secret, char *sigOut);
 bool publishMQTT(const char *topic, const char *payload);
+void signCanonicalJson(const char *canonical, const char *secret, char *sigOut);
+void buildPhotoCanonical(unsigned long ts, long ctr, char *out, size_t maxLen);
+bool uploadPhoto(const uint8_t *photoBuf, size_t photoLen, long counter);
 
 void setup() {
   Serial.begin(115200);
@@ -96,6 +104,23 @@ void setup() {
   if (err != ESP_OK) {
     Serial.printf("Camera init failed: 0x%x\n", err);
     return;
+  }
+
+  // NTP sync
+  configTime(TZ_OFFSET_SEC, 0, NTP_SERVER);
+  Serial.print("Syncing NTP");
+  for (int i = 0; i < 20; i++) {
+    time_t now = time(nullptr);
+    if (now > 100000) {
+      ntpSynced = true;
+      Serial.println(" OK");
+      break;
+    }
+    Serial.print(".");
+    delay(500);
+  }
+  if (!ntpSynced) {
+    Serial.println(" FAIL (will use millis fallback)");
   }
 
   // MQTT
@@ -148,17 +173,19 @@ void handleTap() {
   Serial.println("Tap detected!");
 
   // 1. Capture frame from camera
-  uint8_t *frameBuf = NULL;
-  size_t frameLen = 0;
-  if (!captureFrame(&frameBuf, &frameLen)) {
+  camera_fb_t *fb = esp_camera_fb_get();
+  if (!fb) {
     Serial.println("Frame capture failed");
     return;
   }
+  uint8_t *frameBuf = fb->buf;
+  size_t frameLen = fb->len;
 
   // 2. Decode QR from frame
   char studentToken[256];
   if (!decodeQR(frameBuf, frameLen, studentToken, sizeof(studentToken))) {
     Serial.println("No QR code found");
+    esp_camera_fb_return(fb);
     return;
   }
   Serial.printf("Student token: %s\n", studentToken);
@@ -171,18 +198,25 @@ void handleTap() {
     lon = 85.3374;
   }
 
-  // 4. Increment counter
+  // 4. Get epoch timestamp
+  unsigned long timestamp;
+  if (ntpSynced) {
+    timestamp = (unsigned long)time(nullptr) * 1000;
+  } else {
+    timestamp = millis();
+  }
+
+  // 5. Increment counter
   counter++;
 
-  // 5. Build and sign payload
-  unsigned long timestamp = millis();  // would use NTP in production
+  // 6. Build and sign payload
   char payloadBuf[512];
   buildPayload(studentToken, lat, lon, timestamp, counter, payloadBuf, sizeof(payloadBuf));
 
   char signature[65];
   signPayload(payloadBuf, DEVICE_SECRET, signature);
 
-  // 6. Build final JSON with signature
+  // 7. Build final JSON with signature
   StaticJsonDocument<768> doc;
   deserializeJson(doc, payloadBuf);
   doc["signature"] = signature;
@@ -190,20 +224,105 @@ void handleTap() {
   char finalPayload[768];
   serializeJson(doc, finalPayload, sizeof(finalPayload));
 
-  // 7. Publish
+  // 8. Publish MQTT
   String topic = String(MQTT_TOPIC_PREFIX) + DEVICE_ID + MQTT_TOPIC_SUFFIX;
   publishMQTT(topic.c_str(), finalPayload);
 
   Serial.println("Tap complete. Payload:");
   Serial.println(finalPayload);
+
+  // 9. Upload photo via HTTP (best-effort, non-blocking)
+  if (frameBuf && frameLen > 0) {
+    uploadPhoto(frameBuf, frameLen, counter);
+  }
+
+  // Return camera buffer
+  esp_camera_fb_return(fb);
 }
 
-bool captureFrame(uint8_t **buf, size_t *len) {
-  camera_fb_t *fb = esp_camera_fb_get();
-  if (!fb) return false;
-  *buf = fb->buf;
-  *len = fb->len;
-  esp_camera_fb_return(fb);
+void signCanonicalJson(const char *canonical, const char *secret, char *sigOut) {
+  byte hmacResult[32];
+  mbedtls_md_context_t ctx;
+  mbedtls_md_type_t mdType = MBEDTLS_MD_SHA256;
+
+  mbedtls_md_init(&ctx);
+  mbedtls_md_setup(&ctx, mbedtls_md_info_from_type(mdType), 1);
+  mbedtls_md_hmac_starts(&ctx, (const unsigned char *)secret, strlen(secret));
+  mbedtls_md_hmac_update(&ctx, (const unsigned char *)canonical, strlen(canonical));
+  mbedtls_md_hmac_finish(&ctx, hmacResult);
+  mbedtls_md_free(&ctx);
+
+  for (int i = 0; i < 32; i++) {
+    sprintf(sigOut + (i * 2), "%02x", hmacResult[i]);
+  }
+  sigOut[64] = '\0';
+}
+
+void buildPhotoCanonical(unsigned long ts, long ctr, char *out, size_t maxLen) {
+  snprintf(out, maxLen,
+    "{\"counter\":%ld,\"deviceId\":\"%s\",\"photoTimestamp\":%lu}",
+    ctr, DEVICE_ID, ts);
+}
+
+bool uploadPhoto(const uint8_t *photoBuf, size_t photoLen, long ctr) {
+  unsigned long photoTimestamp;
+  if (ntpSynced) {
+    photoTimestamp = (unsigned long)time(nullptr) * 1000;
+  } else {
+    photoTimestamp = millis();
+  }
+
+  char canonical[256];
+  buildPhotoCanonical(photoTimestamp, ctr, canonical, sizeof(canonical));
+
+  char photoSignature[65];
+  signCanonicalJson(canonical, DEVICE_SECRET, photoSignature);
+
+  WiFiClientSecure httpClient;
+  httpClient.setInsecure();
+
+  if (!httpClient.connect(BACKEND_HOST, BACKEND_PORT)) {
+    Serial.println("[PHOTO] HTTP connect failed");
+    return false;
+  }
+
+  String boundary = "----SafeRide" + String(random(0x7fffffff), HEX);
+  String bodyHead = "--" + boundary + "\r\n"
+    "Content-Disposition: form-data; name=\"deviceId\"\r\n\r\n" + String(DEVICE_ID) + "\r\n"
+    "--" + boundary + "\r\n"
+    "Content-Disposition: form-data; name=\"counter\"\r\n\r\n" + String(ctr) + "\r\n"
+    "--" + boundary + "\r\n"
+    "Content-Disposition: form-data; name=\"photoTimestamp\"\r\n\r\n" + String(photoTimestamp) + "\r\n"
+    "--" + boundary + "\r\n"
+    "Content-Disposition: form-data; name=\"photoSignature\"\r\n\r\n" + String(photoSignature) + "\r\n"
+    "--" + boundary + "\r\n"
+    "Content-Disposition: form-data; name=\"photo\"; filename=\"tap.jpg\"\r\n"
+    "Content-Type: image/jpeg\r\n\r\n";
+  String bodyTail = "\r\n--" + boundary + "--\r\n";
+
+  size_t contentLen = bodyHead.length() + photoLen + bodyTail.length();
+
+  httpClient.print("POST /attendance/photo HTTP/1.1\r\n");
+  httpClient.print("Host: " + String(BACKEND_HOST) + "\r\n");
+  httpClient.print("Content-Type: multipart/form-data; boundary=" + boundary + "\r\n");
+  httpClient.print("Content-Length: " + String(contentLen) + "\r\n");
+  httpClient.print("Connection: close\r\n");
+  httpClient.print("\r\n");
+  httpClient.print(bodyHead);
+  httpClient.write(photoBuf, photoLen);
+  httpClient.print(bodyTail);
+
+  unsigned long timeout = millis() + 10000;
+  while (httpClient.connected() && millis() < timeout) {
+    while (httpClient.available()) {
+      String line = httpClient.readStringUntil('\n');
+      if (line.startsWith("HTTP/1.1 200") || line.startsWith("HTTP/1.1 201")) {
+        Serial.println("[PHOTO] Upload OK");
+      }
+    }
+    delay(10);
+  }
+  httpClient.stop();
   return true;
 }
 

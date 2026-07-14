@@ -1,7 +1,15 @@
-yourdomain.example.com {
-    reverse_proxy backend:3000
-}
+https://localhost {
+    tls internal
 
-dashboard.yourdomain.example.com {
-    reverse_proxy dashboard:80
+    header / {
+        Strict-Transport-Security "max-age=63072000"
+    }
+
+    handle_path /api/* {
+        reverse_proxy backend:3000
+    }
+
+    handle {
+        reverse_proxy dashboard:80
+    }
 }

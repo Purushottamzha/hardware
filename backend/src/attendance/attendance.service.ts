@@ -10,6 +10,7 @@ const TIME_WINDOW_MS = 60_000;
 const DEBOUNCE_MS = 10_000;
 const AUTO_SUSPEND_THRESHOLD = 5;
 const AUTO_SUSPEND_WINDOW_MS = 5 * 60_000;
+const NEPAL_TZ_OFFSET_MIN = 345; // UTC+5:45
 
 const STATE_SEQUENCE: Record<string, { nextStates: string[]; timeWindows?: { start: number; end: number }[] }> = {
   NOT_BOARDED: {
@@ -157,6 +158,11 @@ export class AttendanceService implements OnModuleInit {
     }
 
     const now = Date.now();
+
+    await this.prisma.device.update({
+      where: { id: device.id },
+      data: { lastSeenCounter: payload.counter },
+    });
     if (Math.abs(now - payload.timestamp) > TIME_WINDOW_MS) {
       await this.logSecurityEvent('TIMESTAMP_OUT_OF_WINDOW', payload.deviceId, rawPayload);
       return { accepted: false, reason: 'TIMESTAMP_OUT_OF_WINDOW' };
@@ -227,7 +233,6 @@ export class AttendanceService implements OnModuleInit {
     await this.prisma.device.update({
       where: { id: device.id },
       data: {
-        lastSeenCounter: payload.counter,
         invalidSigCount: 0,
         invalidSigWindowStart: null,
       },
@@ -263,12 +268,27 @@ export class AttendanceService implements OnModuleInit {
     return expectedSig === signature;
   }
 
-  private buildCanonicalJson(obj: Record<string, any>): string {
+  buildCanonicalJson(obj: Record<string, any>): string {
     const sorted: Record<string, any> = {};
     Object.keys(obj).sort().forEach((k) => {
       sorted[k] = obj[k];
     });
     return JSON.stringify(sorted);
+  }
+
+  async verifyPhotoSignature(deviceId: string, counter: number, photoTimestamp: number, photoSignature: string): Promise<boolean> {
+    const device = await this.prisma.device.findUnique({ where: { id: deviceId } });
+    if (!device) return false;
+    if (device.status === 'suspended') return false;
+
+    const secret = await this.devicesService.getSecret(device.id);
+    const canonical = this.buildCanonicalJson({ deviceId, counter, photoTimestamp });
+    const expectedSig = crypto.createHmac('sha256', secret).update(canonical).digest('hex');
+
+    const expectedBuf = Buffer.from(expectedSig, 'hex');
+    const providedBuf = Buffer.from(photoSignature, 'hex');
+    if (expectedBuf.length !== providedBuf.length) return false;
+    return crypto.timingSafeEqual(expectedBuf, providedBuf);
   }
 
   private getNextEventType(currentState: string): string {
@@ -285,7 +305,7 @@ export class AttendanceService implements OnModuleInit {
   }
 
   private checkTimeWindow(currentState: string, timestampMs: number): boolean {
-    const date = new Date(timestampMs);
+    const date = new Date(timestampMs + NEPAL_TZ_OFFSET_MIN * 60_000);
     const minutesSinceMidnight = date.getUTCHours() * 60 + date.getUTCMinutes();
     const config = STATE_SEQUENCE[currentState];
     if (!config || !config.timeWindows || config.timeWindows.length === 0) return true;
@@ -295,7 +315,6 @@ export class AttendanceService implements OnModuleInit {
 
   private async incrementInvalidSigCount(device: any) {
     const now = new Date();
-    const windowStart = device.invalidSigWindowStart || now;
 
     if (device.invalidSigWindowStart && (now.getTime() - device.invalidSigWindowStart.getTime()) > AUTO_SUSPEND_WINDOW_MS) {
       await this.prisma.device.update({
@@ -305,25 +324,23 @@ export class AttendanceService implements OnModuleInit {
       return;
     }
 
-    const newCount = device.invalidSigCount + 1;
-    if (newCount >= AUTO_SUSPEND_THRESHOLD) {
+    const updated = await this.prisma.device.update({
+      where: { id: device.id },
+      data: {
+        invalidSigCount: { increment: 1 },
+        invalidSigWindowStart: device.invalidSigWindowStart || now,
+      },
+    });
+
+    if (updated.invalidSigCount >= AUTO_SUSPEND_THRESHOLD) {
       await this.prisma.device.update({
         where: { id: device.id },
-        data: { status: 'suspended', invalidSigCount: newCount },
+        data: { status: 'suspended' },
       });
 
       await this.auditService.log(0, 'AUTO_SUSPENDED', device.id);
-
       await this.logSecurityEvent('AUTO_SUSPENDED', device.id, { deviceId: device.id });
-      this.logger.warn(`Device ${device.id} auto-suspended after ${newCount} invalid signatures`);
-    } else {
-      await this.prisma.device.update({
-        where: { id: device.id },
-        data: {
-          invalidSigCount: newCount,
-          invalidSigWindowStart: windowStart,
-        },
-      });
+      this.logger.warn(`Device ${device.id} auto-suspended after ${updated.invalidSigCount} invalid signatures`);
     }
   }
 
@@ -406,6 +423,7 @@ export class AttendanceService implements OnModuleInit {
         flagReason: true,
         rejectionReason: true,
         deviceId: true,
+        photoPath: true,
       },
     });
   }

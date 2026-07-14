@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import { PrismaClient } from '@prisma/client';
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 
 function loadSecret(name: string): string {
   const fileVar = `${name}_FILE`;

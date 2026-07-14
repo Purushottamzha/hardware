@@ -1,4 +1,5 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import * as fs from 'node:fs';
 import * as mqtt from 'mqtt';
 import { AttendanceService } from '../attendance/attendance.service';
 import { loadSecret } from '../common/config/secret-loader';
@@ -17,13 +18,21 @@ export class MqttService implements OnModuleInit {
     const password = process.env.MOSQUITTO_PASSWORD || loadSecret('MOSQUITTO_PASSWORD') || '';
     const caPath = process.env.MOSQUITTO_CA_CERT || '/mosquitto/certs/ca.crt';
 
-    this.client = mqtt.connect(`mqtts://${host}:${port}`, {
+    const rejectUnauthorized = process.env.MQTT_TLS_REJECT_UNAUTHORIZED !== 'false';
+
+    const tlsOptions: any = {
       username,
       password,
-      ca: caPath,
-      rejectUnauthorized: false,
+      rejectUnauthorized,
       clientId: `backend-${Date.now()}`,
-    });
+    };
+
+    if (rejectUnauthorized) {
+      tlsOptions.ca = fs.readFileSync(caPath);
+      tlsOptions.servername = host;
+    }
+
+    this.client = mqtt.connect(`mqtts://${host}:${port}`, tlsOptions);
 
     this.client.on('connect', () => {
       this.logger.log('Connected to Mosquitto');

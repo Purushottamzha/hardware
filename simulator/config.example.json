@@ -1,6 +1,7 @@
 {
   "deviceId": "bus-ba2kha4521-door-SIM",
   "deviceSecret": "",
+  "apiBaseUrl": "http://your-backend-host:3000",
   "broker": {
     "host": "localhost",
     "port": 8883,

@@ -68,6 +68,40 @@ interface AttendanceEventPayload {
   rejectionReason: string | null;
 }
 
+function PhotoView({ eventId }: { eventId: number }) {
+  const [src, setSrc] = React.useState<string | null>(null);
+  const objectUrlRef = React.useRef<string | null>(null);
+
+  useEffect(() => {
+    const token = sessionStorage.getItem('token');
+    fetch(`${API}/attendance/${eventId}/photo`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => {
+        if (!r.ok) throw new Error();
+        return r.blob();
+      })
+      .then((blob) => {
+        const url = URL.createObjectURL(blob);
+        objectUrlRef.current = url;
+        setSrc(url);
+      })
+      .catch(() => {});
+    return () => {
+      if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
+    };
+  }, [eventId]);
+
+  if (!src) return <span style={{ fontSize: 12, color: '#9ca3af' }}>Loading photo...</span>;
+  return (
+    <img
+      src={src}
+      alt="Attendance photo"
+      style={{ maxWidth: 200, maxHeight: 150, borderRadius: 4, border: '1px solid #e5e7eb' }}
+    />
+  );
+}
+
 function StateBadge({ state }: { state: string }) {
   const color = STATE_COLORS[state] || '#6b7280';
   const label = STATE_LABELS[state] || state;
@@ -129,7 +163,7 @@ function TimelineModal({ studentId, studentName, onClose }: { studentId: string;
                   marginBottom: '0.5rem', opacity: ev.verified ? 1 : 0.7,
                 }}>
                   <div style={{ minWidth: 60, fontSize: 12, color: '#666' }}>{time}</div>
-                  <div>
+                  <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 600, fontSize: 14 }}>
                       {STATE_LABELS[ev.eventType] || ev.eventType}
                       {!ev.verified && <span style={{ color: '#ef4444', marginLeft: 8, fontSize: 12 }}>(Rejected)</span>}
@@ -137,6 +171,11 @@ function TimelineModal({ studentId, studentName, onClose }: { studentId: string;
                     </div>
                     {ev.lat && ev.lon && (
                       <div style={{ fontSize: 11, color: '#999' }}>{ev.lat.toFixed(4)}, {ev.lon.toFixed(4)}</div>
+                    )}
+                    {ev.photoPath && (
+                      <div style={{ marginTop: 6 }}>
+                        <PhotoView eventId={ev.id} />
+                      </div>
                     )}
                   </div>
                 </div>

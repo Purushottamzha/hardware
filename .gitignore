@@ -1,8 +1,11 @@
 # Secrets — never commit
 .env
+.env.*
+!.env.example
 *.pem
 *.key
 *.cert
+*.crt
 mosquitto/certs/
 config.json
 secrets.h
@@ -12,15 +15,24 @@ secrets/
 node_modules/
 dist/
 
+# Test seed files with hardcoded secrets (not for commit)
+backend/seed_test.*
+backend/prisma/seed_test.*
+
 # Python
 __pycache__/
 *.pyc
 
 # QR output
 qr_*.png
+student_qr*.png
 
 # Simulator artifacts
 *.last_payload.json
+
+# Simulator config variants (example is tracked)
+simulator/config.*.json
+!simulator/config.example.json
 
 # IDE
 .vscode/
