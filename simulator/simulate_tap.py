@@ -136,13 +136,15 @@ def sign_payload(payload_without_sig, secret):
 
 
 def publish_mqtt(cfg, payload):
-    """Publish over TLS MQTT with retain=False, QoS 1."""
+    """Publish MQTT with TLS (port 8883) or plaintext (other ports)."""
     client = mqtt.Client(
         client_id=f"sim-{cfg['deviceId']}-{int(time.time())}",
         callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
     )
-    client.tls_set(cfg["broker"]["caCert"])
-    client.tls_insecure_set(True)
+    use_tls = cfg["broker"].get("port") == 8883
+    if use_tls:
+        client.tls_set(cfg["broker"]["caCert"])
+        client.tls_insecure_set(True)
     client.username_pw_set(cfg["broker"]["username"], cfg["broker"]["password"])
 
     try:
