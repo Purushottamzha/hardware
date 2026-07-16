@@ -42,11 +42,16 @@ echo ""
 echo "[4/5] Registering device with backend..."
 echo ""
 
-# 4a. Login
+# 4a. Login — use Python argv to build JSON safely (no quoting issues)
 API_BASE="https://$BROKER_HOST/api"
+LOGIN_BODY=$(python3 -c "
+import json, sys
+args = sys.argv[1:]
+print(json.dumps({'phone': args[0], 'password': args[1]}))
+" "$ADMIN_PHONE" "$ADMIN_PASSWORD" 2>/dev/null)
 LOGIN_RESP=$(curl -sk -X POST "$API_BASE/auth/login" \
   -H "Content-Type: application/json" \
-  -d "{\"phone\":\"$ADMIN_PHONE\",\"password\":\"$ADMIN_PASSWORD\"}" 2>/dev/null)
+  -d "$LOGIN_BODY" 2>/dev/null)
 
 JWT=$(echo "$LOGIN_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('access_token',''))" 2>/dev/null)
 
@@ -58,10 +63,15 @@ fi
 echo "  Logged in as $ADMIN_PHONE"
 
 # 4b. Register device
+REG_BODY=$(python3 -c "
+import json, sys
+args = sys.argv[1:]
+print(json.dumps({'id': args[0], 'busId': args[1]}))
+" "$DEVICE_ID" "$BUS_ID" 2>/dev/null)
 REG_RESP=$(curl -sk -X POST "$API_BASE/devices/register" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $JWT" \
-  -d "{\"id\":\"$DEVICE_ID\",\"busId\":\"$BUS_ID\"}" 2>/dev/null)
+  -d "$REG_BODY" 2>/dev/null)
 
 DEVICE_SECRET=$(echo "$REG_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('secret',''))" 2>/dev/null)
 
