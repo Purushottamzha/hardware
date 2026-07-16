@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-SafeRide Nepal — Attendance Tap Simulator (Phase 1)
+SafeRide Nepal — Attendance Tap Simulator (Phase 1 + Offline Buffering)
 
 Runs in Termux on Android or any Python 3 environment.
 
@@ -10,6 +10,7 @@ Usage:
     python simulate_tap.py --token "base64token..."
     python simulate_tap.py --tamper    # corrupts signature for attack simulation
     python simulate_tap.py --replay    # re-publishes last captured payload
+    python simulate_tap.py --flush     # flush offline buffer
 """
 
 import argparse
@@ -24,6 +25,8 @@ from pathlib import Path
 
 import paho.mqtt.client as mqtt
 import requests
+
+from offline_buffer import buffer_event, flush_buffer, get_last_counter
 
 CONFIG_PATH = Path(__file__).parent / "config.json"
 LAST_PAYLOAD_PATH = Path(__file__).parent / ".last_payload.json"
@@ -217,12 +220,52 @@ def poll_status():
     print("[NOTE] Check the Live Feed dashboard to verify acceptance.")
 
 
+def publish_with_buffer(cfg, payload):
+    """
+    Try to publish via MQTT. If it fails, buffer the event locally.
+    Returns True if published immediately, False if buffered.
+    """
+    success = publish_mqtt(cfg, payload)
+    if success:
+        return True
+
+    # Buffer the event for later retry
+    print("[BUFFER] MQTT unavailable, buffering event locally...")
+    buffer_event(
+        device_id=cfg["deviceId"],
+        student_token=payload["studentToken"],
+        lat=payload["lat"],
+        lon=payload["lon"],
+        timestamp=payload["timestamp"],
+        counter=payload["counter"],
+        signature=payload["signature"],
+    )
+    return False
+
+
+def flush_buffer_cmd(cfg):
+    """Flush all buffered events."""
+    print("[BUFFER] Flushing offline buffer...")
+    sent = flush_buffer(lambda p: publish_mqtt(cfg, p))
+    print(f"[BUFFER] Flushed {sent} events")
+
+
 def simulate_tap(args):
     cfg = load_config()
+
+    # Resume counter from buffer if higher
+    buffered_counter = get_last_counter()
+    if buffered_counter > cfg["counter"]:
+        print(f"[BUFFER] Resuming counter from buffer: {buffered_counter}")
+        cfg["counter"] = buffered_counter
+        save_config(cfg)
 
     print("=" * 50)
     print("SafeRide Nepal — Attendance Tap")
     print("=" * 50)
+
+    # --- Flush buffer first ---
+    flush_buffer_cmd(cfg)
 
     # --- Replay mode ---
     if args.replay:
@@ -290,8 +333,8 @@ def simulate_tap(args):
     print(json.dumps(payload, indent=2))
     print(f"--- Signature valid: {'NO (tampered)' if args.tamper else 'YES'} ---")
 
-    # --- Publish ---
-    publish_mqtt(cfg, payload)
+    # --- Publish (with offline buffering) ---
+    publish_with_buffer(cfg, payload)
 
     # --- Upload photo (non-blocking, best-effort, HMAC-signed) ---
     if photo_path and photo_path.exists():
@@ -306,7 +349,14 @@ def main():
     parser.add_argument("--token", help="Raw student token string")
     parser.add_argument("--tamper", action="store_true", help="Corrupt signature for attack simulation")
     parser.add_argument("--replay", action="store_true", help="Re-publish last captured payload verbatim")
+    parser.add_argument("--flush", action="store_true", help="Flush offline buffer and exit")
     args = parser.parse_args()
+
+    cfg = load_config()
+
+    if args.flush:
+        flush_buffer_cmd(cfg)
+        return
 
     simulate_tap(args)
 

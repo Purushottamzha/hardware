@@ -6,6 +6,10 @@ export class HealthController {
   @Public()
   @Get()
   check() {
-    return { status: 'ok', timestamp: new Date().toISOString() };
+    return {
+      status: 'ok',
+      env: process.env.NODE_ENV || 'development',
+      timestamp: new Date().toISOString(),
+    };
   }
 }

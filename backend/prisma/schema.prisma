@@ -1,10 +1,25 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+model Route {
+  id        String @id
+  name      String
+  waypoints Json
+  buses     Bus[]
+}
+
+model Bus {
+  id      String    @id
+  routeId String
+  route   Route     @relation(fields: [routeId], references: [id])
+  students Student[]
 }
 
 model Device {
@@ -19,10 +34,24 @@ model Device {
 }
 
 model Student {
-  id           String             @id @default(cuid())
-  name         String
-  currentState String             @default("NOT_BOARDED")
-  events       AttendanceEvent[]
+  id            String   @id @default(cuid())
+  name          String
+  class         String
+  busId         String
+  bus           Bus      @relation(fields: [busId], references: [id])
+  guardianName  String?
+  guardianPhone String?
+  wardTole      String?
+  homeLat       Float?
+  homeLon       Float?
+  homeRadiusM   Int      @default(150)
+  routeOrder    Int?
+  currentState  String   @default("NOT_BOARDED")
+  qrRevoked     Boolean  @default(false)
+  tokenVersion  Int      @default(1)
+  events        AttendanceEvent[]
+
+  @@index([busId])
 }
 
 model AttendanceEvent {
@@ -41,9 +70,14 @@ model AttendanceEvent {
   flagReason      String?
   rejectionReason String?
   photoPath       String?
+  resolved        Boolean  @default(false)
+  resolutionNote  String?
+  manualByAdminId Int?
   createdAt       DateTime @default(now())
 
   @@unique([deviceId, deviceCounter])
+  @@index([studentId, createdAt])
+  @@index([deviceId, createdAt])
 }
 
 model SecurityEvent {
@@ -70,5 +104,16 @@ model AuditLog {
   targetId  String?
   prevHash  String
   hash      String
+  details   String?
   createdAt DateTime @default(now())
+}
+
+model CalendarOverride {
+  id                Int      @id @default(autoincrement())
+  date              DateTime @unique
+  dayType           String
+  boardWindowStart  String?
+  boardWindowEnd    String?
+  departWindowStart String?
+  departWindowEnd   String?
 }

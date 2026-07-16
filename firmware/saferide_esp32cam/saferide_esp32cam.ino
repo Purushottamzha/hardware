@@ -1,11 +1,15 @@
 /**
- * SafeRide Nepal — ESP32-CAM Attendance Device (Phase 2)
+ * SafeRide Nepal — ESP32-CAM Attendance Device (Phase 2 + Offline Buffering)
  *
  * Implements the same MQTT contract as the Python simulator.
  * Intended for ESP32-CAM with OV2640 camera + GPS module.
  *
  * Provisioning: device secret is loaded from gitignored secrets.h,
  *                not hardcoded. See firmware/README.md.
+ *
+ * Offline buffering: Events are stored in SPIFFS when MQTT is unavailable
+ * and flushed on reconnect. The backend accepts slightly-stale timestamps
+ * if counter sequence is valid (flagged as DELAYED_OFFLINE_SYNC).
  *
  * Security note: This is a documented scope-limited implementation.
  *                Production would use NVS encryption or a secure element.
@@ -17,6 +21,8 @@
 #include <esp_camera.h>
 #include <ArduinoJson.h>
 #include <mbedtls/md.h>
+#include <SPIFFS.h>
+#include <FS.h>
 
 // ---- secrets.h (gitignored) ----
 // Create this file with:
@@ -40,12 +46,18 @@
 #define NTP_SERVER "pool.ntp.org"
 #define TZ_OFFSET_SEC 19800  // UTC+5:45 (Nepal)
 
+// SPIFFS buffer config
+#define BUFFER_FILE "/buffer.jsonl"
+#define MAX_BUFFER_EVENTS 500
+#define MAX_BUFFER_SIZE_KB 200
+
 WiFiClientSecure wifiClient;
 PubSubClient mqttClient(wifiClient);
 
 long counter = 0;
 unsigned long lastTapTime = 0;
 bool ntpSynced = false;
+bool spiffsReady = false;
 
 // Forward declarations
 bool captureFrame(uint8_t **buf, size_t *len);
@@ -59,10 +71,21 @@ void signCanonicalJson(const char *canonical, const char *secret, char *sigOut);
 void buildPhotoCanonical(unsigned long ts, long ctr, char *out, size_t maxLen);
 bool uploadPhoto(const uint8_t *photoBuf, size_t photoLen, long counter);
 
+// Buffer functions
+void initSpiffs();
+void loadCounterFromBuffer();
+bool bufferEvent(const char *payload);
+bool flushBuffer();
+bool mqttConnected();
+
 void setup() {
   Serial.begin(115200);
   delay(1000);
   Serial.println("SafeRide ESP32-CAM Attendance Device");
+
+  // Initialize SPIFFS for offline buffering
+  initSpiffs();
+  loadCounterFromBuffer();
 
   // WiFi
   WiFi.begin(WIFI_SSID, WIFI_PASS);
@@ -131,6 +154,11 @@ void setup() {
   // GPS
   Serial2.begin(GPS_BAUD, SERIAL_8N1, 16, 17);  // RX=16, TX=17
 
+  // Try to flush any buffered events on startup
+  if (mqttConnected()) {
+    flushBuffer();
+  }
+
   Serial.println("Ready. Waiting for tap...");
 }
 
@@ -160,6 +188,8 @@ void reconnectMQTT() {
     String clientId = String("esp32-") + String(DEVICE_ID) + "-" + String(random(0xffff), HEX);
     if (mqttClient.connect(clientId.c_str(), MQTT_USER, MQTT_PASS)) {
       Serial.println("connected");
+      // Flush buffered events on successful reconnection
+      flushBuffer();
     } else {
       Serial.print("failed, rc=");
       Serial.print(mqttClient.state());
@@ -167,6 +197,10 @@ void reconnectMQTT() {
       delay(5000);
     }
   }
+}
+
+bool mqttConnected() {
+  return mqttClient.connected();
 }
 
 void handleTap() {
@@ -224,12 +258,20 @@ void handleTap() {
   char finalPayload[768];
   serializeJson(doc, finalPayload, sizeof(finalPayload));
 
-  // 8. Publish MQTT
+  // 8. Try to publish MQTT, buffer if unavailable
   String topic = String(MQTT_TOPIC_PREFIX) + DEVICE_ID + MQTT_TOPIC_SUFFIX;
-  publishMQTT(topic.c_str(), finalPayload);
+  bool published = false;
+  if (mqttConnected()) {
+    published = publishMQTT(topic.c_str(), finalPayload);
+  }
 
-  Serial.println("Tap complete. Payload:");
-  Serial.println(finalPayload);
+  if (!published) {
+    Serial.println("[BUFFER] MQTT unavailable, buffering event locally...");
+    bufferEvent(finalPayload);
+  } else {
+    Serial.println("Tap complete. Payload:");
+    Serial.println(finalPayload);
+  }
 
   // 9. Upload photo via HTTP (best-effort, non-blocking)
   if (frameBuf && frameLen > 0) {
@@ -238,6 +280,175 @@ void handleTap() {
 
   // Return camera buffer
   esp_camera_fb_return(fb);
+}
+
+// Initialize SPIFFS
+void initSpiffs() {
+  if (!SPIFFS.begin(true)) {
+    Serial.println("[SPIFFS] Mount failed");
+    spiffsReady = false;
+    return;
+  }
+  spiffsReady = true;
+  Serial.println("[SPIFFS] Mounted successfully");
+
+  // Check buffer file size
+  File f = SPIFFS.open(BUFFER_FILE, "r");
+  if (f) {
+    size_t size = f.size();
+    f.close();
+    Serial.printf("[BUFFER] Existing buffer size: %d bytes\n", size);
+  }
+}
+
+// Load counter from last buffered event to maintain monotonic sequence
+void loadCounterFromBuffer() {
+  if (!spiffsReady) return;
+
+  File f = SPIFFS.open(BUFFER_FILE, "r");
+  if (!f) return;
+
+  char line[512];
+  long maxCounter = 0;
+  while (f.available()) {
+    size_t len = f.readBytesUntil('\n', line, sizeof(line) - 1);
+    if (len > 0) {
+      line[len] = '\0';
+      StaticJsonDocument<512> doc;
+      DeserializationError err = deserializeJson(doc, line);
+      if (!err && doc.containsKey("counter")) {
+        long c = doc["counter"].as<long>();
+        if (c > maxCounter) maxCounter = c;
+      }
+    }
+  }
+  f.close();
+
+  if (maxCounter > counter) {
+    counter = maxCounter;
+    Serial.printf("[BUFFER] Resumed counter from buffer: %ld\n", counter);
+  }
+}
+
+// Buffer an event to SPIFFS (JSON Lines format)
+bool bufferEvent(const char *payload) {
+  if (!spiffsReady) {
+    Serial.println("[BUFFER] SPIFFS not ready");
+    return false;
+  }
+
+  // Check buffer size limit
+  File f = SPIFFS.open(BUFFER_FILE, "r");
+  size_t currentSize = f ? f.size() : 0;
+  if (f) f.close();
+
+  if (currentSize > MAX_BUFFER_SIZE_KB * 1024) {
+    Serial.println("[BUFFER] Buffer full, dropping oldest events...");
+    // Simple rotation: remove first 10% of lines
+    rotateBuffer();
+  }
+
+  // Append new event
+  f = SPIFFS.open(BUFFER_FILE, "a");
+  if (!f) {
+    Serial.println("[BUFFER] Failed to open buffer for writing");
+    return false;
+  }
+
+  f.println(payload);
+  f.close();
+  Serial.printf("[BUFFER] Event buffered (counter=%ld)\n", counter);
+  return true;
+}
+
+// Simple buffer rotation - keep newest events
+void rotateBuffer() {
+  if (!spiffsReady) return;
+
+  File f = SPIFFS.open(BUFFER_FILE, "r");
+  if (!f) return;
+
+  // Read all lines
+  String lines[MAX_BUFFER_EVENTS];
+  int count = 0;
+  char line[512];
+  while (f.available() && count < MAX_BUFFER_EVENTS) {
+    size_t len = f.readBytesUntil('\n', line, sizeof(line) - 1);
+    if (len > 0) {
+      line[len] = '\0';
+      lines[count++] = String(line);
+    }
+  }
+  f.close();
+
+  // Keep newest 90%
+  int keep = count * 9 / 10;
+  File fw = SPIFFS.open(BUFFER_FILE, "w");
+  if (!fw) return;
+
+  for (int i = count - keep; i < count; i++) {
+    fw.println(lines[i]);
+  }
+  fw.close();
+
+  Serial.printf("[BUFFER] Rotated buffer: kept %d of %d events\n", keep, count);
+}
+
+// Flush buffered events in order
+bool flushBuffer() {
+  if (!spiffsReady) return false;
+
+  File f = SPIFFS.open(BUFFER_FILE, "r");
+  if (!f) return false;
+
+  String topic = String(MQTT_TOPIC_PREFIX) + DEVICE_ID + MQTT_TOPIC_SUFFIX;
+  int flushed = 0;
+  int failed = 0;
+  char line[512];
+
+  // Read all lines into memory first (small buffer)
+  String lines[MAX_BUFFER_EVENTS];
+  int count = 0;
+  while (f.available() && count < MAX_BUFFER_EVENTS) {
+    size_t len = f.readBytesUntil('\n', line, sizeof(line) - 1);
+    if (len > 0) {
+      line[len] = '\0';
+      lines[count++] = String(line);
+    }
+  }
+  f.close();
+
+  if (count == 0) return true;
+
+  Serial.printf("[BUFFER] Flushing %d buffered events...\n", count);
+
+  for (int i = 0; i < count; i++) {
+    if (!mqttConnected()) {
+      Serial.println("[BUFFER] MQTT disconnected during flush, stopping");
+      break;
+    }
+
+    if (publishMQTT(topic.c_str(), lines[i].c_str())) {
+      flushed++;
+    } else {
+      failed++;
+      // If we fail, keep remaining events for next flush
+      break;
+    }
+    delay(50);  // Small delay between publishes
+  }
+
+  // Rewrite buffer with remaining unflushed events
+  File fw = SPIFFS.open(BUFFER_FILE, "w");
+  if (fw) {
+    for (int i = flushed; i < count; i++) {
+      fw.println(lines[i]);
+    }
+    fw.close();
+  }
+
+  Serial.printf("[BUFFER] Flushed %d, remaining %d\n", flushed, count - flushed);
+  return failed == 0;
 }
 
 void signCanonicalJson(const char *canonical, const char *secret, char *sigOut) {

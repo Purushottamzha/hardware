@@ -1,11 +1,23 @@
-https://localhost {
-    tls internal
+{
+    debug
+}
+
+http://:80 {
+    redir https://{host}{uri}
+}
+
+:443 {
+    tls /certs/saferide-dev.crt /certs/saferide-dev.key
 
     header / {
-        Strict-Transport-Security "max-age=63072000"
+        -Strict-Transport-Security
     }
 
     handle_path /api/* {
+        reverse_proxy backend:3000
+    }
+
+    handle /socket.io/* {
         reverse_proxy backend:3000
     }
 

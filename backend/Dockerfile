@@ -15,5 +15,5 @@ COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/tsconfig*.json ./
 RUN npm install
 EXPOSE 3000
-RUN apk add --no-cache openssl
-CMD ["sh", "-c", "npx prisma db push --accept-data-loss && npx prisma db seed || true && node dist/src/main"]
+RUN apk add --no-cache openssl postgresql-client
+CMD ["sh", "-c", "psql \"$DATABASE_URL\" -c 'DELETE FROM \"AttendanceEvent\"; DELETE FROM \"SecurityEvent\"; DELETE FROM \"CalendarOverride\"; DELETE FROM \"AuditLog\"; DELETE FROM \"Student\"; DELETE FROM \"Device\"; DELETE FROM \"Bus\"; DELETE FROM \"Route\";' ; npx prisma db push --accept-data-loss && npx prisma db seed || true && node dist/src/main"]

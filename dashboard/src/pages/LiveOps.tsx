@@ -74,6 +74,9 @@ interface StudentEntry {
   flagged: boolean;
   flagReason: string | null;
   deviceId: string;
+  hasEvent: boolean;
+  routeName?: string;
+  currentState?: string;
 }
 
 function formatTime(iso: string): string {
@@ -173,19 +176,39 @@ export function LiveOps() {
         const data: OverviewData = await res.json();
         setDevices(data.devices);
 
-        const entries: StudentEntry[] = data.students
-          .filter((s) => s.lastEvent && s.lastEvent.lat && s.lastEvent.lon)
-          .map((s) => ({
+        const entries: StudentEntry[] = data.students.map((s) => {
+          const ev = s.lastEvent;
+          if (ev && ev.lat && ev.lon) {
+            return {
+              id: s.id,
+              name: s.name,
+              time: formatTime(ev.eventTimestamp),
+              lat: ev.lat,
+              lon: ev.lon,
+              verified: ev.verified,
+              flagged: ev.flagged,
+              flagReason: ev.flagReason,
+              deviceId: '',
+              hasEvent: true,
+              routeName: (s as any).routeName,
+              currentState: s.currentState,
+            };
+          }
+          return {
             id: s.id,
             name: s.name,
-            time: formatTime(s.lastEvent!.eventTimestamp),
-            lat: s.lastEvent!.lat,
-            lon: s.lastEvent!.lon,
-            verified: s.lastEvent!.verified,
-            flagged: s.lastEvent!.flagged,
-            flagReason: s.lastEvent!.flagReason,
+            time: '--:--',
+            lat: 0,
+            lon: 0,
+            verified: false,
+            flagged: false,
+            flagReason: null,
             deviceId: '',
-          }));
+            hasEvent: false,
+            routeName: (s as any).routeName,
+            currentState: s.currentState,
+          };
+        });
         setStudents(entries);
 
         const lastGps = data.students
@@ -214,6 +237,7 @@ export function LiveOps() {
         flagged: data.flagged,
         flagReason: data.flagReason,
         deviceId: data.deviceId,
+        hasEvent: true,
       };
       if (idx !== -1) {
         const updated = [...prev];
@@ -233,7 +257,7 @@ export function LiveOps() {
   useEffect(() => {
     const token = sessionStorage.getItem('token');
     const socket: Socket = io(API, {
-      transports: ['websocket'],
+      transports: ['websocket', 'polling'],
       auth: { token },
     });
 
@@ -251,6 +275,7 @@ export function LiveOps() {
 
   useEffect(() => {
     if (mapInitRef.current) return;
+    if (loading) return;
     const map = L.map('ops-map', {
       center: [gps?.lat ?? 27.6939, gps?.lon ?? 85.3374],
       zoom: 14,
@@ -263,7 +288,7 @@ export function LiveOps() {
     }).addTo(map);
     mapRef.current = map;
     mapInitRef.current = true;
-  }, []);
+  }, [loading]);
 
   useEffect(() => {
     if (!mapRef.current) return;
@@ -280,6 +305,7 @@ export function LiveOps() {
     }
 
     for (const s of students) {
+      if (!s.hasEvent) continue;
       const existing = markers.get(s.id);
       if (existing) {
         existing.setLatLng([s.lat, s.lon]);
@@ -338,7 +364,7 @@ export function LiveOps() {
   }, [gps]);
 
   const selectedStudent = useMemo(
-    () => students.find((s) => s.id === selectedId) || students[students.length - 1] || null,
+    () => students.find((s) => s.id === selectedId) || students.find((s) => s.hasEvent) || students[students.length - 1] || null,
     [students, selectedId]
   );
 
@@ -690,17 +716,21 @@ export function LiveOps() {
                         onMouseEnter={(e) => { if (s.id !== selectedId) e.currentTarget.style.backgroundColor = colors.tableRowHover; }}
                         onMouseLeave={(e) => { if (s.id !== selectedId) e.currentTarget.style.backgroundColor = 'transparent'; }}
                       >
-                        <td style={{ padding: '10px 20px', fontWeight: 500, color: colors.text, opacity: 0.9 }}>{s.name}</td>
-                        <td style={{ padding: '10px 20px', color: colors.textSecondary, fontVariantNumeric: 'tabular-nums' }}>{s.time}</td>
+                        <td style={{ padding: '10px 20px', fontWeight: 500, color: colors.text, opacity: s.hasEvent ? 0.9 : 0.5 }}>{s.name}</td>
+                        <td style={{ padding: '10px 20px', color: colors.textSecondary, fontVariantNumeric: 'tabular-nums' }}>{s.hasEvent ? s.time : '—'}</td>
                         <td style={{ padding: '10px 20px' }}>
-                          <StatusChip status={s.verified ? (s.flagged ? 'flagged' : 'verified') : 'rejected'} flagged={s.flagged} flagReason={s.flagReason} colors={colors} />
+                          {s.hasEvent ? (
+                            <StatusChip status={s.verified ? (s.flagged ? 'flagged' : 'verified') : 'rejected'} flagged={s.flagged} flagReason={s.flagReason} colors={colors} />
+                          ) : (
+                            <span style={{ fontSize: 11, color: colors.textMuted }}>Waiting</span>
+                          )}
                         </td>
                       </tr>
                     ))}
                     {filtered.length === 0 && (
                       <tr>
                         <td colSpan={3} style={{ padding: 32, textAlign: 'center', fontSize: 12, color: colors.textMuted }}>
-                          {query ? `No students match "${query}".` : 'No attendance events yet. Waiting for first tap...'}
+                          {query ? `No students match "${query}".` : 'No students assigned to this route.'}
                         </td>
                       </tr>
                     )}
@@ -776,13 +806,13 @@ export function LiveOps() {
                 <div style={{ borderRadius: 8, padding: 12, backgroundColor: colors.chipBg, border: `1px solid ${colors.cardBorder}` }}>
                   <div style={labelStyle}>Latitude</div>
                   <div style={{ fontFamily: 'ui-monospace, SFMono-Regular, monospace', fontSize: 13, color: colors.accentText, fontVariantNumeric: 'tabular-nums' }}>
-                    {selectedStudent ? selectedStudent.lat.toFixed(5) : '—'}
+                    {selectedStudent && selectedStudent.hasEvent ? selectedStudent.lat.toFixed(5) : '—'}
                   </div>
                 </div>
                 <div style={{ borderRadius: 8, padding: 12, backgroundColor: colors.chipBg, border: `1px solid ${colors.cardBorder}` }}>
                   <div style={labelStyle}>Longitude</div>
                   <div style={{ fontFamily: 'ui-monospace, SFMono-Regular, monospace', fontSize: 13, color: colors.accentText, fontVariantNumeric: 'tabular-nums' }}>
-                    {selectedStudent ? selectedStudent.lon.toFixed(5) : '—'}
+                    {selectedStudent && selectedStudent.hasEvent ? selectedStudent.lon.toFixed(5) : '—'}
                   </div>
                 </div>
               </div>

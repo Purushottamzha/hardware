@@ -102,6 +102,20 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     try { localStorage.setItem('saferide-theme', theme); } catch {}
+    const root = document.documentElement;
+    const c = theme === 'dark' ? dark : light;
+    root.style.setProperty('--color-bg', c.bg);
+    root.style.setProperty('--color-card-bg', c.cardBg);
+    root.style.setProperty('--color-hover', c.tableRowHover);
+    root.style.setProperty('--color-selected', c.tableRowSelected);
+    root.style.setProperty('--color-text', c.text);
+    root.style.setProperty('--color-text-secondary', c.textSecondary);
+    root.style.setProperty('--color-text-muted', c.textMuted);
+    root.style.setProperty('--color-border', c.cardBorder);
+    root.style.setProperty('--color-input-bg', c.inputBg);
+    root.style.setProperty('--color-input-border', c.inputBorder);
+    root.style.setProperty('--color-header-bg', c.headerBg);
+    root.style.setProperty('--color-header-border', c.headerBorder);
   }, [theme]);
 
   const colors = theme === 'dark' ? dark : light;

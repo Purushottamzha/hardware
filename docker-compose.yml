@@ -21,6 +21,7 @@ services:
     image: eclipse-mosquitto:2
     ports:
       - "8883:8883"
+      - "1883:1883"
     volumes:
       - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf
       - ./mosquitto/certs:/mosquitto/certs:rw
@@ -30,6 +31,8 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
     environment:
       - DATABASE_URL=postgresql://saferide:saferide_pass@postgres:5432/saferide
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
@@ -69,9 +72,12 @@ services:
     image: caddy:2-alpine
     ports:
       - "443:443"
+    command: ["caddy", "run", "--config", "/etc/caddy/caddy.json"]
     volumes:
-      - ./ops/Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./mosquitto/certs:/certs:ro
+      - ./ops/caddy.json:/etc/caddy/caddy.json:ro
+      - ./certs/saferide-dev.crt:/certs/saferide-dev.crt:ro
+      - ./certs/saferide-dev.key:/certs/saferide-dev.key:ro
+      - ./mosquitto/certs:/mosquitto-certs:ro
     depends_on:
       - dashboard
       - backend

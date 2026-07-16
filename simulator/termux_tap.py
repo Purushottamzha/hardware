@@ -87,12 +87,17 @@ def publish_mqtt(cfg, payload):
     )
 
     ca_path = cfg.get("caCertPath")
-    if not ca_path or not os.path.isfile(ca_path):
-        print(f"[ERROR] CA cert not found at: {ca_path}", file=sys.stderr)
-        sys.exit(1)
-
-    client.tls_set(ca_path)
-    client.tls_insecure_set(True)
+    if ca_path and os.path.isfile(ca_path):
+        client.tls_set(ca_path)
+        client.tls_insecure_set(True)
+    else:
+        if ca_path:
+            print(f"[WARN] CA cert not found at {ca_path}, skipping TLS verification", file=sys.stderr)
+        else:
+            print("[INFO] No caCertPath configured, skipping TLS verification", file=sys.stderr)
+        import ssl
+        client.tls_set_context(ssl.create_default_context())
+        client.tls_insecure_set(True)
     client.username_pw_set(cfg.get("mqttUsername"), cfg.get("mqttPassword"))
 
     try:

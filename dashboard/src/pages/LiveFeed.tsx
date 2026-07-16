@@ -37,8 +37,11 @@ interface LastEvent {
 interface StudentState {
   id: string;
   name: string;
+  class: string;
   currentState: string;
   lastEvent: LastEvent | null;
+  routeOrder?: number | null;
+  routeName?: string | null;
 }
 
 interface DeviceInfo {
@@ -66,40 +69,7 @@ interface AttendanceEventPayload {
   flagged: boolean;
   flagReason: string | null;
   rejectionReason: string | null;
-}
-
-function PhotoView({ eventId }: { eventId: number }) {
-  const [src, setSrc] = React.useState<string | null>(null);
-  const objectUrlRef = React.useRef<string | null>(null);
-
-  useEffect(() => {
-    const token = sessionStorage.getItem('token');
-    fetch(`${API}/attendance/${eventId}/photo`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((r) => {
-        if (!r.ok) throw new Error();
-        return r.blob();
-      })
-      .then((blob) => {
-        const url = URL.createObjectURL(blob);
-        objectUrlRef.current = url;
-        setSrc(url);
-      })
-      .catch(() => {});
-    return () => {
-      if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
-    };
-  }, [eventId]);
-
-  if (!src) return <span style={{ fontSize: 12, color: '#9ca3af' }}>Loading photo...</span>;
-  return (
-    <img
-      src={src}
-      alt="Attendance photo"
-      style={{ maxWidth: 200, maxHeight: 150, borderRadius: 4, border: '1px solid #e5e7eb' }}
-    />
-  );
+  routeName?: string | null;
 }
 
 function StateBadge({ state }: { state: string }) {
@@ -117,6 +87,45 @@ function StateBadge({ state }: { state: string }) {
     }}>
       {label}
     </span>
+  );
+}
+
+function StudentRow({ student }: { student: StudentState }) {
+  const time = student.lastEvent
+    ? new Date(student.lastEvent.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+    : '—';
+
+  const statusColor = student.lastEvent?.verified
+    ? (student.lastEvent.flagged ? '#f59e0b' : '#22c55e')
+    : '#ef4444';
+
+  const statusText = student.lastEvent?.verified
+    ? (student.lastEvent.flagged ? `⚠ ${student.lastEvent.flagReason}` : STATE_LABELS[student.currentState] || student.currentState)
+    : 'Rejected';
+
+  const routeLabel = student.routeName || '—';
+
+  return (
+    <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
+      <td style={{ padding: '12px 16px', fontWeight: 500 }}>{student.name}</td>
+      <td style={{ padding: '12px 16px', color: '#6b7280' }}>{student.class || '—'}</td>
+      <td style={{ padding: '12px 16px', color: '#6b7280', fontSize: 13 }}>{routeLabel}</td>
+      <td style={{ padding: '12px 16px', color: '#374151', fontFamily: 'monospace', fontSize: 14 }}>{time}</td>
+      <td style={{ padding: '12px 16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span
+            style={{
+              width: 10,
+              height: 10,
+              borderRadius: '50%',
+              backgroundColor: statusColor,
+              flexShrink: 0,
+            }}
+          />
+          <span style={{ fontSize: 14, fontWeight: 500, color: statusColor }}>{statusText}</span>
+        </div>
+      </td>
+    </tr>
   );
 }
 
@@ -172,55 +181,12 @@ function TimelineModal({ studentId, studentName, onClose }: { studentId: string;
                     {ev.lat && ev.lon && (
                       <div style={{ fontSize: 11, color: '#999' }}>{ev.lat.toFixed(4)}, {ev.lon.toFixed(4)}</div>
                     )}
-                    {ev.photoPath && (
-                      <div style={{ marginTop: 6 }}>
-                        <PhotoView eventId={ev.id} />
-                      </div>
-                    )}
                   </div>
                 </div>
               );
             })}
           </div>
         )}
-      </div>
-    </div>
-  );
-}
-
-function StudentCard({ student, onClick }: { student: StudentState; onClick: () => void }) {
-  const time = student.lastEvent
-    ? new Date(student.lastEvent.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-    : null;
-
-  return (
-    <div onClick={onClick} style={{
-      background: '#fff',
-      border: '1px solid #e5e7eb',
-      borderRadius: 8,
-      padding: '0.75rem 1rem',
-      cursor: 'pointer',
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      transition: 'box-shadow 0.15s',
-    }}
-      onMouseEnter={(e) => (e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.08)')}
-      onMouseLeave={(e) => (e.currentTarget.style.boxShadow = 'none')}
-    >
-      <div>
-        <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 4 }}>{student.name}</div>
-        {student.lastEvent && (
-          <div style={{ fontSize: 12, color: '#9ca3af' }}>
-            {student.lastEvent.verified
-              ? (student.lastEvent.flagged ? `⚠ ${student.lastEvent.flagReason}` : '')
-              : '✗ Rejected'}
-          </div>
-        )}
-      </div>
-      <div style={{ textAlign: 'right' }}>
-        <div style={{ marginBottom: 4 }}><StateBadge state={student.currentState} /></div>
-        {time && <div style={{ fontSize: 11, color: '#9ca3af' }}>{time}</div>}
       </div>
     </div>
   );
@@ -252,9 +218,9 @@ export function LiveFeed() {
   }, []);
 
   useEffect(() => {
-    const socket: Socket = io(API, { transports: ['websocket'] });
+    const socket: Socket = io(API, { transports: ['websocket', 'polling'] });
 
-    socket.on('attendanceEvent', (data: AttendanceEventPayload) => {
+    socket.on('attendanceEvent', (data: AttendanceEventPayload & { routeName?: string | null }) => {
       setStudents((prev) => {
         const updated = [...prev];
         const idx = updated.findIndex((s) => s.id === data.studentId);
@@ -262,6 +228,7 @@ export function LiveFeed() {
           updated[idx] = {
             ...updated[idx],
             currentState: data.verified ? data.event : updated[idx].currentState,
+            routeName: data.routeName ?? updated[idx].routeName,
             lastEvent: {
               id: 0,
               eventType: data.event,
@@ -288,8 +255,10 @@ export function LiveFeed() {
   }, []);
 
   useEffect(() => {
+    const el = document.getElementById('map');
+    if (!el) return;
     if (!mapRef.current) {
-      const map = L.map('map', {
+      const map = L.map(el, {
         center: [latestGps?.lat ?? 27.6939, latestGps?.lon ?? 85.3374],
         zoom: 14,
         zoomControl: true,
@@ -300,6 +269,12 @@ export function LiveFeed() {
       }).addTo(map);
       mapRef.current = map;
     }
+    return () => {
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -322,16 +297,10 @@ export function LiveFeed() {
   const lastSeen = devices.length > 0
     ? Math.max(...devices.filter((d) => d.lastSeenCounter > 0).map((d) => d.lastSeenCounter))
     : 0;
-  const hasActiveDevice = devices.some((d) => d.status === 'active');
   const online = lastSeen > 0;
 
   return (
     <div style={{ fontFamily: 'system-ui, sans-serif' }}>
-      {/* Map panel */}
-      <div style={{ marginBottom: '1rem', borderRadius: 8, overflow: 'hidden', border: '1px solid #e5e7eb', height: 250 }}>
-        <div id="map" style={{ width: '100%', height: '100%' }} />
-      </div>
-
       {/* Device health strip */}
       <div style={{
         display: 'flex', gap: '1rem', marginBottom: '1rem', padding: '0.75rem 1rem',
@@ -358,16 +327,69 @@ export function LiveFeed() {
         ))}
       </div>
 
-      {/* Student roster */}
-      <h2 style={{ fontSize: 16, fontWeight: 600, margin: '0 0 0.75rem' }}>Students</h2>
-      <div style={{ display: 'grid', gap: '0.5rem', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}>
-        {students.map((s) => (
-          <StudentCard key={s.id} student={s} onClick={() => setSelectedStudent({ id: s.id, name: s.name })} />
-        ))}
-        {students.length === 0 && (
-          <p style={{ color: '#9ca3af', gridColumn: '1 / -1' }}>No students registered yet.</p>
-        )}
+      {/* Attendance summary */}
+      <div style={{
+        display: 'flex', gap: '0.75rem', marginBottom: '0.75rem', flexWrap: 'wrap',
+      }}>
+        {Object.entries(STATE_LABELS).map(([key, label]) => {
+          const count = students.filter((s) => s.currentState === key).length;
+          const color = STATE_COLORS[key] || '#6b7280';
+          return (
+            <div key={key} style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '6px 12px', borderRadius: 8,
+              background: '#f9fafb', border: '1px solid #e5e7eb',
+              fontSize: 13,
+            }}>
+              <span style={{
+                width: 8, height: 8, borderRadius: '50%',
+                background: color, flexShrink: 0,
+              }} />
+              <span style={{ color: '#374151', fontWeight: 500 }}>{count}</span>
+              <span style={{ color: '#6b7280' }}>{label}</span>
+            </div>
+          );
+        })}
       </div>
+
+      {/* Attendance table */}
+      <div style={{ border: '1px solid #e5e7eb', borderRadius: 8, overflow: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr style={{ background: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
+              <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, fontSize: 13, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Student Name</th>
+              <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, fontSize: 13, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Class</th>
+              <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, fontSize: 13, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Route</th>
+              <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, fontSize: 13, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Arrival Time</th>
+              <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, fontSize: 13, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {students.map((s) => (
+              <StudentRow key={s.id} student={s} />
+            ))}
+            {students.length === 0 && (
+              <tr>
+                <td colSpan={5} style={{ padding: '32px', textAlign: 'center', color: '#9ca3af' }}>
+                  No students registered yet.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Mini map */}
+      <div
+        id="map"
+        style={{
+          marginTop: '1rem',
+          height: 240,
+          borderRadius: 8,
+          border: '1px solid #e5e7eb',
+          overflow: 'hidden',
+        }}
+      />
 
       {/* Timeline modal */}
       {selectedStudent && (

@@ -6,18 +6,19 @@ import { PrismaService } from '../prisma/prisma.service';
 export class AuditService {
   constructor(private prisma: PrismaService) {}
 
-  async log(adminId: number, action: string, targetId?: string) {
+  async log(adminId: number, action: string, targetId?: string, details?: Record<string, any>) {
     const lastLog = await this.prisma.auditLog.findFirst({
       orderBy: { id: 'desc' },
     });
     const prevHash = lastLog ? lastLog.hash : '0';
     const now = new Date();
 
-    const hashInput = `${prevHash}|${action}|${targetId || ''}|${now.toISOString()}`;
+    const detailsStr = details ? JSON.stringify(details) : '';
+    const hashInput = `${prevHash}|${action}|${targetId || ''}|${detailsStr}|${now.toISOString()}`;
     const hash = crypto.createHash('sha256').update(hashInput).digest('hex');
 
     return this.prisma.auditLog.create({
-      data: { adminId, action, targetId, prevHash, hash, createdAt: now },
+      data: { adminId, action, targetId, prevHash, hash, details: detailsStr || null, createdAt: now },
     });
   }
 
@@ -42,7 +43,7 @@ export class AuditService {
 
       const expectedHash = crypto
         .createHash('sha256')
-        .update(`${log.prevHash}|${log.action}|${log.targetId || ''}|${log.createdAt.toISOString()}`)
+        .update(`${log.prevHash}|${log.action}|${log.targetId || ''}|${log.details || ''}|${log.createdAt.toISOString()}`)
         .digest('hex');
       if (log.hash !== expectedHash) {
         return { valid: false, brokenAt: log.id };

@@ -5,33 +5,30 @@ import { DevicesService } from '../devices/devices.service';
 import { StudentsService } from '../students/students.service';
 import { EventsGateway } from '../events-gateway/events.gateway';
 import { AuditService } from '../audit/audit.service';
+import { getMinutesSinceMidnightNPT, getNPTDate, getEffectiveWindows } from '../common/utils/npt-timezone';
 
 const TIME_WINDOW_MS = 60_000;
 const DEBOUNCE_MS = 10_000;
 const AUTO_SUSPEND_THRESHOLD = 5;
 const AUTO_SUSPEND_WINDOW_MS = 5 * 60_000;
-const NEPAL_TZ_OFFSET_MIN = 345; // UTC+5:45
+const ANTI_PASSBACK_WINDOW_MS = 5 * 60 * 1000;
 
-const STATE_SEQUENCE: Record<string, { nextStates: string[]; timeWindows?: { start: number; end: number }[] }> = {
-  NOT_BOARDED: {
-    nextStates: ['BOARDED'],
-    timeWindows: [{ start: 6.5 * 60, end: 9.75 * 60 }],
-  },
-  BOARDED: {
-    nextStates: ['ARRIVED_SCHOOL'],
-    timeWindows: [{ start: 0, end: 45 }],
-  },
-  ARRIVED_SCHOOL: {
-    nextStates: ['DEPARTED'],
-    timeWindows: [{ start: 15 * 60, end: 17 * 60 }],
-  },
-  DEPARTED: {
-    nextStates: ['ARRIVED_HOME'],
-    timeWindows: [{ start: 0, end: 45 }],
-  },
-  ARRIVED_HOME: {
-    nextStates: [],
-  },
+const DEFAULT_BOARD_WINDOW = { start: 6.5 * 60, end: 9.75 * 60 };
+const DEFAULT_DEPART_WINDOW = { start: 15 * 60, end: 17 * 60 };
+
+const DEFAULT_WINDOWS = {
+  boardStart: 6.5 * 60,
+  boardEnd: 9.75 * 60,
+  departStart: 15 * 60,
+  departEnd: 17 * 60,
+};
+
+const STATE_SEQUENCE: Record<string, { nextStates: string[] }> = {
+  NOT_BOARDED: { nextStates: ['BOARDED'] },
+  BOARDED: { nextStates: ['ARRIVED_SCHOOL'] },
+  ARRIVED_SCHOOL: { nextStates: ['DEPARTED'] },
+  DEPARTED: { nextStates: ['ARRIVED_HOME'] },
+  ARRIVED_HOME: { nextStates: [] },
 };
 
 interface AttendancePayload {
@@ -47,6 +44,7 @@ interface AttendancePayload {
 @Injectable()
 export class AttendanceService implements OnModuleInit {
   private readonly logger = new Logger(AttendanceService.name);
+  private calendarOverrides: any[] = [];
 
   constructor(
     private prisma: PrismaService,
@@ -57,8 +55,16 @@ export class AttendanceService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
+    await this.loadCalendarOverrides();
     this.scheduleMidnightReset();
     this.schedulePhotoCleanup();
+    setInterval(() => this.loadCalendarOverrides(), 60 * 60 * 1000);
+  }
+
+  private async loadCalendarOverrides() {
+    this.calendarOverrides = await this.prisma.calendarOverride.findMany({
+      orderBy: { date: 'asc' },
+    });
   }
 
   private schedulePhotoCleanup() {
@@ -163,9 +169,17 @@ export class AttendanceService implements OnModuleInit {
       where: { id: device.id },
       data: { lastSeenCounter: payload.counter },
     });
-    if (Math.abs(now - payload.timestamp) > TIME_WINDOW_MS) {
+
+    const timestampDiff = Math.abs(now - payload.timestamp);
+    const isDelayedSync = timestampDiff > TIME_WINDOW_MS;
+    let delayedFlag = false;
+
+    if (isDelayedSync) {
       await this.logSecurityEvent('TIMESTAMP_OUT_OF_WINDOW', payload.deviceId, rawPayload);
-      return { accepted: false, reason: 'TIMESTAMP_OUT_OF_WINDOW' };
+      if (timestampDiff > TIME_WINDOW_MS * 10) {
+        return { accepted: false, reason: 'TIMESTAMP_OUT_OF_WINDOW' };
+      }
+      delayedFlag = true;
     }
 
     const studentData = await this.studentsService.verifyToken(payload.studentToken);
@@ -174,10 +188,25 @@ export class AttendanceService implements OnModuleInit {
       return { accepted: false, reason: 'INVALID_STUDENT_TOKEN' };
     }
 
-    const student = await this.prisma.student.findUnique({ where: { id: studentData.studentId } });
+    const student = await this.prisma.student.findUnique({
+      where: { id: studentData.studentId },
+      include: { bus: { include: { route: { select: { name: true } } } } },
+    });
     if (!student) {
       await this.logSecurityEvent('UNKNOWN_STUDENT', payload.deviceId, rawPayload);
       return { accepted: false, reason: 'UNKNOWN_STUDENT' };
+    }
+
+    if (student.qrRevoked) {
+      await this.logSecurityEvent('QR_REVOKED', payload.deviceId, rawPayload);
+      return { accepted: false, reason: 'QR_REVOKED' };
+    }
+
+    const tokenPayload = JSON.parse(Buffer.from(payload.studentToken, 'base64').toString('utf8'));
+    const tokenData = JSON.parse(tokenPayload.payload);
+    if (tokenData.tokenVersion && tokenData.tokenVersion !== student.tokenVersion) {
+      await this.logSecurityEvent('TOKEN_VERSION_MISMATCH', payload.deviceId, rawPayload);
+      return { accepted: false, reason: 'TOKEN_VERSION_MISMATCH' };
     }
 
     const lastEvent = await this.prisma.attendanceEvent.findFirst({
@@ -189,8 +218,19 @@ export class AttendanceService implements OnModuleInit {
       return { accepted: false, reason: 'DEBOUNCED' };
     }
 
+    const antiPassback = await this.prisma.attendanceEvent.findFirst({
+      where: {
+        studentId: student.id,
+        eventType: this.getNextEventType(student.currentState),
+        createdAt: { gte: new Date(now - ANTI_PASSBACK_WINDOW_MS) },
+      },
+    });
+
+    if (antiPassback) {
+      await this.logSecurityEvent('ANTI_PASSBACK_TRIGGERED', payload.deviceId, rawPayload);
+    }
+
     const currentState = student.currentState;
-    const stateConfig = STATE_SEQUENCE[currentState];
     const nextEventType = this.getNextEventType(currentState);
 
     const sequenceValid = this.validateStateSequence(currentState, nextEventType, payload);
@@ -206,11 +246,24 @@ export class AttendanceService implements OnModuleInit {
       eventType = currentState === 'NOT_BOARDED' ? 'BOARDED' : currentState;
       await this.logSecurityEvent('INVALID_SEQUENCE', payload.deviceId, rawPayload);
     } else {
-      const timeValid = this.checkTimeWindow(currentState, payload.timestamp);
-      if (!timeValid) {
+      const timeCheck = this.checkTimeWindow(currentState, payload.timestamp);
+      if (!timeCheck.valid) {
         flagged = true;
-        flagReason = `OUTSIDE_TIME_WINDOW`;
+        flagReason = timeCheck.reason;
       }
+
+      if (currentState === 'DEPARTED' && nextEventType === 'ARRIVED_HOME') {
+        const homeCheck = await this.checkHomeGeofence(student.id, payload.lat, payload.lon);
+        if (!homeCheck.inside) {
+          flagged = true;
+          flagReason = (flagReason ? flagReason + '; ' : '') + homeCheck.flagReason;
+        }
+      }
+    }
+
+    if (delayedFlag && verified) {
+      flagged = true;
+      flagReason = (flagReason ? flagReason + '; ' : '') + 'DELAYED_OFFLINE_SYNC';
     }
 
     const event = await this.prisma.attendanceEvent.create({
@@ -255,9 +308,56 @@ export class AttendanceService implements OnModuleInit {
       flagged,
       flagReason: flagged ? flagReason ?? null : null,
       rejectionReason: rejectionReason ?? null,
+      routeName: student.bus?.route?.name || null,
     });
 
     return { accepted: verified, reason: verified ? 'OK' : rejectionReason };
+  }
+
+  async createManualAttendance(adminId: number, studentId: string, eventType: string, reason: string) {
+    const student = await this.prisma.student.findUnique({ where: { id: studentId } });
+    if (!student) {
+      throw new Error('Student not found');
+    }
+
+    const event = await this.prisma.attendanceEvent.create({
+      data: {
+        deviceId: 'MANUAL',
+        studentId,
+        eventType,
+        lat: 0,
+        lon: 0,
+        eventTimestamp: new Date(),
+        deviceCounter: 0,
+        verified: false,
+        flagged: true,
+        flagReason: 'MANUAL_OVERRIDE',
+        rejectionReason: null,
+        manualByAdminId: adminId,
+      },
+      include: { student: true },
+    });
+
+    await this.studentsService.updateState(studentId, eventType);
+    await this.auditService.log(adminId, 'MANUAL_ATTENDANCE', studentId, { eventType, reason });
+
+    this.eventsGateway.broadcastEvent({
+      studentId: student.id,
+      student: student.name,
+      deviceId: 'MANUAL',
+      event: eventType,
+      eventTimestamp: event.createdAt.toISOString(),
+      lat: 0,
+      lon: 0,
+      status: 'warning',
+      verified: false,
+      flagged: true,
+      flagReason: 'MANUAL_OVERRIDE',
+      rejectionReason: null,
+      routeName: null,
+    });
+
+    return event;
   }
 
   private async verifySignature(payload: AttendancePayload, device: any): Promise<boolean> {
@@ -304,13 +404,60 @@ export class AttendanceService implements OnModuleInit {
     return config.nextStates.includes(nextEventType);
   }
 
-  private checkTimeWindow(currentState: string, timestampMs: number): boolean {
-    const date = new Date(timestampMs + NEPAL_TZ_OFFSET_MIN * 60_000);
-    const minutesSinceMidnight = date.getUTCHours() * 60 + date.getUTCMinutes();
-    const config = STATE_SEQUENCE[currentState];
-    if (!config || !config.timeWindows || config.timeWindows.length === 0) return true;
+  private checkTimeWindow(currentState: string, timestampMs: number): { valid: boolean; reason?: string } {
+    const minutesSinceMidnight = getMinutesSinceMidnightNPT(timestampMs);
+    const nptDate = getNPTDate(timestampMs);
+    const override = this.calendarOverrides.find(
+      (o) => o.date.toISOString().split('T')[0] === nptDate.toISOString().split('T')[0]
+    );
 
-    return config.timeWindows.some((tw) => minutesSinceMidnight >= tw.start && minutesSinceMidnight <= tw.end);
+    if (override && override.dayType === 'HOLIDAY') {
+      return { valid: true, reason: 'TAP_ON_HOLIDAY' };
+    }
+
+    const windows = getEffectiveWindows(this.calendarOverrides, timestampMs, DEFAULT_WINDOWS);
+
+    switch (currentState) {
+      case 'NOT_BOARDED':
+        if (minutesSinceMidnight < windows.boardStart || minutesSinceMidnight > windows.boardEnd) {
+          return { valid: false, reason: 'OUTSIDE_BOARD_WINDOW' };
+        }
+        break;
+      case 'ARRIVED_SCHOOL':
+        if (minutesSinceMidnight < windows.departStart || minutesSinceMidnight > windows.departEnd) {
+          return { valid: false, reason: 'OUTSIDE_DEPART_WINDOW' };
+        }
+        break;
+    }
+
+    return { valid: true };
+  }
+
+  private async checkHomeGeofence(studentId: string, lat: number, lon: number): Promise<{ inside: boolean; flagReason?: string }> {
+    const student = await this.prisma.student.findUnique({
+      where: { id: studentId },
+      select: { homeLat: true, homeLon: true, homeRadiusM: true },
+    });
+
+    if (!student || student.homeLat === null || student.homeLon === null) {
+      return { inside: false, flagReason: 'NO_HOME_GEOFENCE_SET' };
+    }
+
+    const distance = this.haversineDistance(lat, lon, student.homeLat, student.homeLon);
+    const inside = distance <= student.homeRadiusM;
+
+    return { inside, flagReason: inside ? undefined : 'OUTSIDE_HOME_GEOFENCE' };
+  }
+
+  private haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+    const R = 6371000;
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLon = ((lon2 - lon1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
   }
 
   private async incrementInvalidSigCount(device: any) {
@@ -368,9 +515,13 @@ export class AttendanceService implements OnModuleInit {
   }
 
   async getOverview() {
-    const students = await this.prisma.student.findMany({
-      select: { id: true, name: true, currentState: true },
+    const raw = await this.prisma.student.findMany({
+      select: { id: true, name: true, currentState: true, class: true, busId: true, routeOrder: true, bus: { select: { route: { select: { name: true } } } } },
     });
+    const students = raw.map((s) => ({
+      id: s.id, name: s.name, currentState: s.currentState, class: s.class, busId: s.busId, routeOrder: s.routeOrder,
+      routeName: (s.bus as any)?.route?.name ?? null,
+    }));
 
     const studentsWithLastEvent = await Promise.all(
       students.map(async (s) => {
@@ -424,7 +575,96 @@ export class AttendanceService implements OnModuleInit {
         rejectionReason: true,
         deviceId: true,
         photoPath: true,
+        resolved: true,
+        resolutionNote: true,
       },
+    });
+  }
+
+  async getAlerts() {
+    return this.prisma.attendanceEvent.findMany({
+      where: {
+        OR: [{ flagged: true }, { verified: false }],
+        resolved: false,
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+      select: {
+        id: true,
+        eventType: true,
+        eventTimestamp: true,
+        createdAt: true,
+        lat: true,
+        lon: true,
+        verified: true,
+        flagged: true,
+        flagReason: true,
+        rejectionReason: true,
+        deviceId: true,
+        resolved: true,
+        resolutionNote: true,
+        student: { select: { id: true, name: true, class: true } },
+        device: { select: { id: true, busId: true } },
+      },
+    });
+  }
+
+  async resolveAlert(id: number, note?: string) {
+    return this.prisma.attendanceEvent.update({
+      where: { id },
+      data: { resolved: true, resolutionNote: note || null },
+    });
+  }
+
+  async getCalendarOverrides() {
+    return this.prisma.calendarOverride.findMany({
+      orderBy: { date: 'desc' },
+    });
+  }
+
+  async createCalendarOverride(dto: any, adminId?: number) {
+    const override = await this.prisma.calendarOverride.create({
+      data: {
+        date: new Date(dto.date),
+        dayType: dto.dayType,
+        boardWindowStart: dto.boardWindowStart || null,
+        boardWindowEnd: dto.boardWindowEnd || null,
+        departWindowStart: dto.departWindowStart || null,
+        departWindowEnd: dto.departWindowEnd || null,
+      },
+    });
+    if (adminId) await this.auditService.log(adminId, 'CREATE_CALENDAR_OVERRIDE', String(override.id));
+    await this.loadCalendarOverrides();
+    return override;
+  }
+
+  async updateCalendarOverride(id: number, dto: any, adminId?: number) {
+    const override = await this.prisma.calendarOverride.update({
+      where: { id },
+      data: {
+        date: new Date(dto.date),
+        dayType: dto.dayType,
+        boardWindowStart: dto.boardWindowStart || null,
+        boardWindowEnd: dto.boardWindowEnd || null,
+        departWindowStart: dto.departWindowStart || null,
+        departWindowEnd: dto.departWindowEnd || null,
+      },
+    });
+    if (adminId) await this.auditService.log(adminId, 'UPDATE_CALENDAR_OVERRIDE', String(id));
+    await this.loadCalendarOverrides();
+    return override;
+  }
+
+  async deleteCalendarOverride(id: number, adminId?: number) {
+    await this.prisma.calendarOverride.delete({ where: { id } });
+    if (adminId) await this.auditService.log(adminId, 'DELETE_CALENDAR_OVERRIDE', String(id));
+    await this.loadCalendarOverrides();
+    return { success: true };
+  }
+
+  async getRoutes() {
+    return this.prisma.route.findMany({
+      include: { buses: true },
     });
   }
 }
