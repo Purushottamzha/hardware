@@ -90,7 +90,11 @@ function StateBadge({ state }: { state: string }) {
   );
 }
 
-function StudentRow({ student }: { student: StudentState }) {
+function StudentRow({ student, onSelectLocation, isSelected }: {
+  student: StudentState;
+  onSelectLocation: (lat: number, lon: number) => void;
+  isSelected: boolean;
+}) {
   const time = student.lastEvent
     ? new Date(student.lastEvent.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
     : '—';
@@ -105,12 +109,33 @@ function StudentRow({ student }: { student: StudentState }) {
 
   const routeLabel = student.routeName || '—';
 
+  const locationLabel = student.lastEvent?.lat && student.lastEvent?.lon
+    ? `${student.lastEvent.lat.toFixed(4)}, ${student.lastEvent.lon.toFixed(4)}`
+    : '—';
+
+  const handleClick = () => {
+    if (student.lastEvent?.lat && student.lastEvent?.lon) {
+      onSelectLocation(student.lastEvent.lat, student.lastEvent.lon);
+    }
+  };
+
   return (
-    <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
+    <tr
+      onClick={handleClick}
+      style={{
+        borderBottom: '1px solid #e5e7eb',
+        cursor: student.lastEvent?.lat ? 'pointer' : 'default',
+        background: isSelected ? '#f0f9ff' : undefined,
+        transition: 'background 0.15s',
+      }}
+      onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.background = '#f9fafb'; }}
+      onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.background = ''; }}
+    >
       <td style={{ padding: '12px 16px', fontWeight: 500 }}>{student.name}</td>
       <td style={{ padding: '12px 16px', color: '#6b7280' }}>{student.class || '—'}</td>
       <td style={{ padding: '12px 16px', color: '#6b7280', fontSize: 13 }}>{routeLabel}</td>
       <td style={{ padding: '12px 16px', color: '#374151', fontFamily: 'monospace', fontSize: 14 }}>{time}</td>
+      <td style={{ padding: '12px 16px', color: '#6b7280', fontSize: 13, fontFamily: 'monospace' }}>{locationLabel}</td>
       <td style={{ padding: '12px 16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span
@@ -197,8 +222,10 @@ export function LiveFeed() {
   const [devices, setDevices] = useState<DeviceInfo[]>([]);
   const [selectedStudent, setSelectedStudent] = useState<{ id: string; name: string } | null>(null);
   const [latestGps, setLatestGps] = useState<{ lat: number; lon: number } | null>(null);
+  const [selectedEventLocation, setSelectedEventLocation] = useState<{ lat: number; lon: number } | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markerRef = useRef<L.Marker | null>(null);
+  const highlightMarkerRef = useRef<L.Marker | null>(null);
 
   useEffect(() => {
     fetch(`${API}/attendance/overview`, {
@@ -290,9 +317,26 @@ export function LiveFeed() {
         });
         markerRef.current = L.marker([latestGps.lat, latestGps.lon], { icon }).addTo(mapRef.current);
       }
-      mapRef.current.setView([latestGps.lat, latestGps.lon], mapRef.current.getZoom());
     }
   }, [latestGps]);
+
+  useEffect(() => {
+    if (!mapRef.current || !selectedEventLocation) return;
+
+    mapRef.current.setView([selectedEventLocation.lat, selectedEventLocation.lon], 16);
+
+    if (highlightMarkerRef.current) {
+      highlightMarkerRef.current.setLatLng([selectedEventLocation.lat, selectedEventLocation.lon]);
+    } else {
+      const icon = L.divIcon({
+        className: '',
+        html: '<div style="background:#3b82f6;width:20px;height:20px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 0 4px rgba(59,130,246,0.4);transition:all 0.3s"></div>',
+        iconSize: [20, 20],
+        iconAnchor: [10, 10],
+      });
+      highlightMarkerRef.current = L.marker([selectedEventLocation.lat, selectedEventLocation.lon], { icon }).addTo(mapRef.current);
+    }
+  }, [selectedEventLocation]);
 
   const lastSeen = devices.length > 0
     ? Math.max(...devices.filter((d) => d.lastSeenCounter > 0).map((d) => d.lastSeenCounter))
@@ -361,16 +405,26 @@ export function LiveFeed() {
               <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, fontSize: 13, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Class</th>
               <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, fontSize: 13, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Route</th>
               <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, fontSize: 13, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Arrival Time</th>
+              <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, fontSize: 13, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Location</th>
               <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, fontSize: 13, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Status</th>
             </tr>
           </thead>
           <tbody>
             {students.map((s) => (
-              <StudentRow key={s.id} student={s} />
+              <StudentRow
+                key={s.id}
+                student={s}
+                onSelectLocation={(lat, lon) => setSelectedEventLocation({ lat, lon })}
+                isSelected={
+                  !!selectedEventLocation &&
+                  s.lastEvent?.lat === selectedEventLocation.lat &&
+                  s.lastEvent?.lon === selectedEventLocation.lon
+                }
+              />
             ))}
             {students.length === 0 && (
               <tr>
-                <td colSpan={5} style={{ padding: '32px', textAlign: 'center', color: '#9ca3af' }}>
+                <td colSpan={6} style={{ padding: '32px', textAlign: 'center', color: '#9ca3af' }}>
                   No students registered yet.
                 </td>
               </tr>
