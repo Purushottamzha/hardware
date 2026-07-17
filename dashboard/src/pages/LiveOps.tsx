@@ -722,7 +722,7 @@ export function LiveOps() {
                           {s.hasEvent ? (
                             <StatusChip status={s.verified ? (s.flagged ? 'flagged' : 'verified') : 'rejected'} flagged={s.flagged} flagReason={s.flagReason} colors={colors} />
                           ) : (
-                            <span style={{ fontSize: 11, color: colors.textMuted }}>Waiting</span>
+                            <span style={{ fontSize: 11, color: colors.textMuted }}>Not Boarded</span>
                           )}
                         </td>
                       </tr>

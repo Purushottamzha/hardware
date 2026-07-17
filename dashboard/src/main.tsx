@@ -157,7 +157,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const navItems = [
     { href: '/', icon: '◉', label: 'Live Feed' },
     { href: '/map', icon: '🗺', label: 'Live Map' },
-    { href: '/ops', icon: '◆', label: 'Live Ops' },
+    // { href: '/ops', icon: '◆', label: 'Live Ops' },
     { href: '/students', icon: '👤', label: 'Students' },
     { href: '/devices', icon: '📡', label: 'Devices' },
     { href: '/alerts', icon: '⚠', label: 'Alerts' },
