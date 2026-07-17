@@ -129,18 +129,23 @@ async function main() {
   }
   console.log('Buses created: ' + BUSES.map(b => b.id).join(', '));
 
-  for (const s of BUS1_STUDENTS) {
-    await prisma.student.create({
-      data: { ...s, busId: 'bus-01', guardianPhone: null, homeRadiusM: 150, currentState: 'NOT_BOARDED', qrRevoked: false, tokenVersion: 1 },
-    });
-  }
+  const existingCount = await prisma.student.count();
+  if (existingCount === 0) {
+    for (const s of BUS1_STUDENTS) {
+      await prisma.student.create({
+        data: { ...s, busId: 'bus-01', guardianPhone: null, homeRadiusM: 150, currentState: 'NOT_BOARDED', qrRevoked: false, tokenVersion: 1 },
+      });
+    }
 
-  for (const s of BUS2_STUDENTS) {
-    await prisma.student.create({
-      data: { ...s, busId: 'bus-02', guardianPhone: null, homeRadiusM: 150, currentState: 'NOT_BOARDED', qrRevoked: false, tokenVersion: 1 },
-    });
+    for (const s of BUS2_STUDENTS) {
+      await prisma.student.create({
+        data: { ...s, busId: 'bus-02', guardianPhone: null, homeRadiusM: 150, currentState: 'NOT_BOARDED', qrRevoked: false, tokenVersion: 1 },
+      });
+    }
+    console.log('20 students created');
+  } else {
+    console.log('Students already exist (' + existingCount + '), skipping creation');
   }
-  console.log('20 students created');
 
   const allStudents = await prisma.student.findMany();
   for (const s of allStudents) {
