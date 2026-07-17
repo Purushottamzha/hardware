@@ -99,13 +99,14 @@ function StudentRow({ student, onSelectLocation, isSelected }: {
     ? new Date(student.lastEvent.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
     : '—';
 
-  const statusColor = student.lastEvent?.verified
-    ? (student.lastEvent.flagged ? '#f59e0b' : '#22c55e')
-    : '#ef4444';
+  const hasEvent = student.lastEvent !== null;
+  const statusColor = hasEvent && student.lastEvent!.verified
+    ? (student.lastEvent!.flagged ? '#f59e0b' : '#22c55e')
+    : (hasEvent ? '#ef4444' : STATE_COLORS[student.currentState] || '#6b7280');
 
-  const statusText = student.lastEvent?.verified
-    ? (student.lastEvent.flagged ? `⚠ ${student.lastEvent.flagReason}` : STATE_LABELS[student.currentState] || student.currentState)
-    : 'Rejected';
+  const statusText = hasEvent && student.lastEvent!.verified
+    ? (student.lastEvent!.flagged ? `⚠ ${student.lastEvent!.flagReason}` : STATE_LABELS[student.currentState] || student.currentState)
+    : (hasEvent ? 'Rejected' : STATE_LABELS[student.currentState] || student.currentState);
 
   const routeLabel = student.routeName || '—';
 
