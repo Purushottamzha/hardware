@@ -279,6 +279,8 @@ export class AttendanceService implements OnModuleInit {
         flagged,
         flagReason,
         rejectionReason,
+        identMethod: tokenData.identMethod || 'QR',
+        identConfidence: tokenData.identConfidence ?? null,
       },
       include: { student: true, device: true },
     });

@@ -110,14 +110,26 @@ export class StudentsService {
     return suggestRoutesForPoint({ lat, lon }, routes as any[], threshold);
   }
 
-  async generateToken(studentId: string, adminId?: number): Promise<{ token: string; qrData: string }> {
+  async generateToken(
+    studentId: string,
+    adminId?: number,
+    identMethod?: string,
+    identConfidence?: number,
+  ): Promise<{ token: string; qrData: string }> {
     const student = await this.prisma.student.findUnique({ where: { id: studentId } });
     if (!student) throw new NotFoundException('Student not found');
 
     const secret = process.env.STUDENT_TOKEN_SECRET || loadSecret('STUDENT_TOKEN_SECRET');
     if (!secret) throw new Error('STUDENT_TOKEN_SECRET not configured');
 
-    const payload = JSON.stringify({ studentId, name: student.name, issuedAt: Date.now(), tokenVersion: student.tokenVersion });
+    const payload = JSON.stringify({
+      studentId,
+      name: student.name,
+      issuedAt: Date.now(),
+      tokenVersion: student.tokenVersion,
+      ...(identMethod ? { identMethod } : {}),
+      ...(identConfidence !== undefined ? { identConfidence } : {}),
+    });
     const hmac = crypto.createHmac('sha256', secret).update(payload).digest('hex');
     const token = Buffer.from(JSON.stringify({ payload, hmac })).toString('base64');
 
@@ -139,7 +151,13 @@ export class StudentsService {
     return this.generateToken(studentId, adminId);
   }
 
-  async verifyToken(tokenBase64: string): Promise<{ studentId: string; name: string; tokenVersion?: number } | null> {
+  async verifyToken(tokenBase64: string): Promise<{
+    studentId: string;
+    name: string;
+    tokenVersion?: number;
+    identMethod?: string;
+    identConfidence?: number;
+  } | null> {
     try {
       const decoded = JSON.parse(Buffer.from(tokenBase64, 'base64').toString('utf8'));
       const secret = process.env.STUDENT_TOKEN_SECRET || loadSecret('STUDENT_TOKEN_SECRET');
@@ -153,7 +171,13 @@ export class StudentsService {
       const MAX_TOKEN_AGE_MS = 24 * 60 * 60 * 1000;
       if (Date.now() - data.issuedAt > MAX_TOKEN_AGE_MS) return null;
 
-      return { studentId: data.studentId, name: data.name, tokenVersion: data.tokenVersion };
+      return {
+        studentId: data.studentId,
+        name: data.name,
+        tokenVersion: data.tokenVersion,
+        identMethod: data.identMethod,
+        identConfidence: data.identConfidence,
+      };
     } catch {
       return null;
     }
@@ -163,6 +187,17 @@ export class StudentsService {
     await this.prisma.student.update({
       where: { id: studentId },
       data: { currentState: state },
+    });
+  }
+
+  async saveFaceEmbedding(studentId: string, embedding: number[], photoPath: string) {
+    const student = await this.prisma.student.findUnique({ where: { id: studentId } });
+    if (!student) throw new NotFoundException('Student not found');
+
+    return this.prisma.faceEmbedding.upsert({
+      where: { studentId },
+      update: { embedding, photoPath },
+      create: { studentId, embedding, photoPath },
     });
   }
 }

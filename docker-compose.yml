@@ -50,6 +50,8 @@ services:
       - NODE_ENV=${NODE_ENV:-development}
       - ADMIN_PHONE=${ADMIN_PHONE:-+977-9800000000}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - FACE_SERVICE_URL=http://face-service:8000
+      - FACE_MATCH_THRESHOLD=${FACE_MATCH_THRESHOLD:-0.70}
     volumes:
       - ./mosquitto/certs:/mosquitto/certs:ro
       - photo_uploads:/app/uploads
@@ -82,6 +84,16 @@ services:
       - dashboard
       - backend
 
+  face-service:
+    build:
+      context: ./face-service
+      dockerfile: Dockerfile
+    environment:
+      - DEEPFACE_HOME=/models
+    volumes:
+      - deepface_models:/models
+    restart: unless-stopped
+
   simulator:
     build:
       context: ./simulator
@@ -99,3 +111,4 @@ volumes:
   pgdata:
   mosquitto_data:
   photo_uploads:
+  deepface_models:

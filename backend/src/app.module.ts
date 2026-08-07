@@ -12,6 +12,7 @@ import { EventsGatewayModule } from './events-gateway/events-gateway.module';
 import { AuditModule } from './audit/audit.module';
 import { SecurityEventsModule } from './security-events/security-events.module';
 import { HealthModule } from './health/health.module';
+import { FaceModule } from './face/face.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 
 @Module({
@@ -28,6 +29,7 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
     AuditModule,
     SecurityEventsModule,
     HealthModule,
+    FaceModule,
   ],
   providers: [
     {

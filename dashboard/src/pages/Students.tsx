@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { apiGet, apiPost, apiPut } from '../utils/api';
+import { apiFetch, apiGet, apiPost, apiPut } from '../utils/api';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -368,6 +368,30 @@ export function Students() {
   const [editing, setEditing] = useState<Student | null>(null);
   const [qrStudent, setQrStudent] = useState<Student | null>(null);
   const [tokens, setTokens] = useState<Map<string, TokenData>>(new Map());
+  const [enrollId, setEnrollId] = useState<string | null>(null);
+  const [enrollment, setEnrollment] = useState<Record<string, string>>({});
+
+  const handleEnrollFace = async (studentId: string, file: File) => {
+    setEnrollId(studentId);
+    setEnrollment((prev) => ({ ...prev, [studentId]: 'uploading' }));
+    try {
+      const fd = new FormData();
+      fd.append('photo', file);
+      const res = await apiFetch(`/students/${studentId}/enroll-face`, {
+        method: 'POST',
+        body: fd,
+      });
+      const data = await res.json().catch(() => ({}));
+      setEnrollment((prev) => ({
+        ...prev,
+        [studentId]: res.ok ? 'enrolled' : `error: ${(data as any).message || res.status}`,
+      }));
+    } catch (e: any) {
+      setEnrollment((prev) => ({ ...prev, [studentId]: 'error' }));
+    } finally {
+      setEnrollId(null);
+    }
+  };
 
   const load = useCallback(async () => {
     try {
@@ -591,7 +615,36 @@ export function Students() {
                             title="View QR code">QR</button>
                           <button onClick={() => { setEditing(s); setShowAdd(false); }}
                             className="px-2.5 py-1 rounded-md text-xs bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-white/40 hover:text-white/60 transition-all">Edit</button>
+                          <span className="flex items-center gap-1">
+                            <button
+                              onClick={() => document.getElementById(`face-${s.id}`)?.click()}
+                              disabled={enrollId === s.id}
+                              title="Enroll face for identification"
+                              className={`px-2.5 py-1 rounded-md text-xs border transition-all ${
+                                enrollment[s.id] === 'enrolled'
+                                  ? 'bg-teal-400/20 border-teal-400/30 text-teal-400'
+                                  : 'bg-white/[0.04] border-white/[0.08] text-white/40 hover:text-white/60'
+                              } ${enrollId === s.id ? 'opacity-50 cursor-wait' : ''}`}
+                            >
+                              {enrollId === s.id ? 'Uploading…' : enrollment[s.id] === 'enrolled' ? '✓ Face' : 'Face'}
+                            </button>
+                            <input
+                              id={`face-${s.id}`}
+                              type="file"
+                              accept="image/jpeg,image/png"
+                              className="hidden"
+                              disabled={enrollId !== null}
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) handleEnrollFace(s.id, file);
+                                e.target.value = '';
+                              }}
+                            />
+                          </span>
                         </div>
+                        {enrollment[s.id] && enrollment[s.id] !== 'enrolled' && enrollment[s.id] !== 'uploading' && (
+                          <p className="text-[10px] text-red-400 mt-1">{enrollment[s.id]}</p>
+                        )}
                       </td>
                     </tr>
                   );

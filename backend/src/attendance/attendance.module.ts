@@ -1,4 +1,5 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule, RequestMethod } from '@nestjs/common';
+import multer from 'multer';
 import { AttendanceService } from './attendance.service';
 import { AttendanceController } from './attendance.controller';
 import { PhotoController } from './photo.controller';
@@ -13,4 +14,10 @@ import { StudentsModule } from '../students/students.module';
   controllers: [AttendanceController, PhotoController],
   exports: [AttendanceService],
 })
-export class AttendanceModule {}
+export class AttendanceModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer
+      .apply(multer({ storage: multer.memoryStorage(), limits: { fileSize: 300 * 1024 } }).single('photo'))
+      .forRoutes({ path: 'attendance/photo', method: RequestMethod.POST });
+  }
+}

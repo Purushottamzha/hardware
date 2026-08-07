@@ -16,4 +16,4 @@ COPY --from=builder /app/tsconfig*.json ./
 RUN npm install
 EXPOSE 3000
 RUN apk add --no-cache openssl postgresql-client
-CMD ["sh", "-c", "npx prisma db push --accept-data-loss && npx prisma db seed || true && node dist/src/main"]
+CMD ["sh", "-c", "npx prisma db push --accept-data-loss && npx prisma db seed || true && node dist/main"]

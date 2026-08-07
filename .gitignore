@@ -22,6 +22,8 @@ backend/prisma/seed_test.*
 # Python
 __pycache__/
 *.pyc
+.venv/
+venv/
 
 # QR output
 qr_*.png
@@ -29,6 +31,14 @@ student_qr*.png
 
 # Simulator artifacts
 *.last_payload.json
+
+# Runtime uploads (photos attached to events / face enrollments)
+backend/uploads/
+simulator/offline_buffer.db
+simulator/*.json.bak
+
+# Phone deployment bundle (contains live device credentials)
+phone-package/
 
 # Simulator config variants (example is tracked)
 simulator/config.*.json

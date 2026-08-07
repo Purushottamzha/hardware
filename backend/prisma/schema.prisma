@@ -50,6 +50,7 @@ model Student {
   qrRevoked     Boolean  @default(false)
   tokenVersion  Int      @default(1)
   events        AttendanceEvent[]
+  faceEmbedding FaceEmbedding?
 
   @@index([busId])
 }
@@ -70,6 +71,8 @@ model AttendanceEvent {
   flagReason      String?
   rejectionReason String?
   photoPath       String?
+  identMethod     String   @default("QR")
+  identConfidence Float?
   resolved        Boolean  @default(false)
   resolutionNote  String?
   manualByAdminId Int?
@@ -105,6 +108,15 @@ model AuditLog {
   prevHash  String
   hash      String
   details   String?
+  createdAt DateTime @default(now())
+}
+
+model FaceEmbedding {
+  id        Int      @id @default(autoincrement())
+  studentId String   @unique
+  student   Student  @relation(fields: [studentId], references: [id])
+  embedding Float[]
+  photoPath String
   createdAt DateTime @default(now())
 }
 

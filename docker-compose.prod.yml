@@ -22,8 +22,12 @@ services:
     image: eclipse-mosquitto:2
     ports:
       - "8883:8883"
+    environment:
+      - DOMAIN=${DOMAIN?}
+    command: ["sh", "-c", "sed \"s/yourdomain.example.com/$DOMAIN/g\" /mosquitto/config/mosquitto.conf > /tmp/mosquitto.conf && mosquitto -c /tmp/mosquitto.conf"]
     volumes:
       - ./mosquitto/mosquitto.prod.conf:/mosquitto/config/mosquitto.conf
+      - ./mosquitto/certs:/mosquitto/certs:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
       - mosquitto_data:/mosquitto/data
     networks:
@@ -35,6 +39,8 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    environment:
+      - DOMAIN=${DOMAIN?}
     volumes:
       - ./ops/Caddyfile:/etc/caddy/Caddyfile
       - caddy_data:/data
@@ -63,6 +69,10 @@ services:
       - NODE_ENV=production
       - ADMIN_PHONE=${ADMIN_PHONE?}
       - ADMIN_PASSWORD_FILE=/run/secrets/admin_password
+      - FACE_SERVICE_URL=http://face-service:8000
+      - FACE_MATCH_THRESHOLD=${FACE_MATCH_THRESHOLD:-0.70}
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt:ro
     secrets:
       - encryption_key
       - jwt_secret
@@ -78,12 +88,24 @@ services:
       - internal
     restart: unless-stopped
 
+  face-service:
+    build:
+      context: ./face-service
+      dockerfile: Dockerfile
+    environment:
+      - DEEPFACE_HOME=/models
+    volumes:
+      - deepface_models:/models
+    networks:
+      - internal
+    restart: unless-stopped
+
   dashboard:
     build:
       context: ./dashboard
       dockerfile: Dockerfile
       args:
-        VITE_API_URL: https://${DOMAIN?}
+        VITE_API_URL: https://dashboard.${DOMAIN?}/api
     depends_on:
       - backend
     networks:
@@ -95,6 +117,7 @@ volumes:
   mosquitto_data:
   caddy_data:
   caddy_config:
+  deepface_models:
 
 networks:
   internal:

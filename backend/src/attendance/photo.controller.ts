@@ -4,8 +4,8 @@ import {
   Post,
   Param,
   ParseIntPipe,
-  UseInterceptors,
-  UploadedFile,
+  UseGuards,
+  Req,
   Body,
   NotFoundException,
   BadRequestException,
@@ -13,13 +13,13 @@ import {
   Logger,
   StreamableFile,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
 import { join, extname } from 'node:path';
 import * as crypto from 'node:crypto';
 import { createReadStream, existsSync, mkdirSync, promises as fs } from 'node:fs';
 import { PrismaService } from '../prisma/prisma.service';
 import { AttendanceService } from './attendance.service';
 import { Public } from '../common/decorators/public.decorator';
+import { DeviceAuthGuard } from '../common/guards/device-auth.guard';
 
 const PHOTO_UPLOAD_SIG_WINDOW_MS = 30_000;
 const PHOTO_MAX_SIZE = 300 * 1024;
@@ -41,26 +41,19 @@ export class PhotoController {
 
   @Post('photo')
   @Public()
-  @UseInterceptors(
-    FileInterceptor('photo', {
-      limits: { fileSize: PHOTO_MAX_SIZE },
-      fileFilter: (_req, file, cb) => {
-        if (file.mimetype !== 'image/jpeg') {
-          cb(new BadRequestException('Only JPEG images allowed'), false);
-          return;
-        }
-        cb(null, true);
-      },
-    }),
-  )
+  @UseGuards(DeviceAuthGuard)
   async uploadPhoto(
-    @UploadedFile() file: any,
+    @Req() req: any,
     @Body('deviceId') deviceId: string,
     @Body('counter') counter: string,
     @Body('photoSignature') photoSignature: string,
     @Body('photoTimestamp') photoTimestamp: string,
   ) {
+    const file = req.file;
     if (!file) throw new BadRequestException('Photo file required');
+    if (file.mimetype !== 'image/jpeg') {
+      throw new BadRequestException('Only JPEG images allowed');
+    }
     if (!deviceId || !counter || !photoSignature || !photoTimestamp) {
       throw new BadRequestException('deviceId, counter, photoSignature, and photoTimestamp required');
     }

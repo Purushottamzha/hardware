@@ -10,5 +10,6 @@
     "caCert": "../mosquitto/certs/ca.crt"
   },
   "topic": "saferide/hardware/{deviceId}/attendance",
-  "counter": 0
+  "counter": 0,
+  "faceMatchThreshold": 0.7
 }
