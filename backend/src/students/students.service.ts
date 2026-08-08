@@ -13,12 +13,14 @@ export class StudentsService {
   ) {}
 
   async list() {
-    return this.prisma.student.findMany({
+    const students = await this.prisma.student.findMany({
       include: {
         bus: { select: { id: true, routeId: true, route: { select: { id: true, name: true, waypoints: true } } } },
+        faceEmbedding: { select: { id: true, photoPath: true } },
       },
       orderBy: [{ busId: 'asc' }, { routeOrder: 'asc' }],
     });
+    return students.map(({ faceEmbedding, ...s }) => ({ ...s, faceEnrolled: faceEmbedding != null }));
   }
 
   private async recomputeRouteOrder(busId: string) {
@@ -185,5 +187,11 @@ export class StudentsService {
       update: { embedding, photoPath },
       create: { studentId, embedding, photoPath },
     });
+  }
+
+  async removeFaceEnrollment(studentId: string) {
+    const student = await this.prisma.student.findUnique({ where: { id: studentId } });
+    if (!student) throw new NotFoundException('Student not found');
+    await this.prisma.faceEmbedding.deleteMany({ where: { studentId } });
   }
 }

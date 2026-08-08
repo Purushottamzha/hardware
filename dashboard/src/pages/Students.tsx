@@ -21,6 +21,7 @@ interface Student {
   homeLat?: number | null;
   homeLon?: number | null;
   routeOrder?: number | null;
+  faceEnrolled?: boolean;
   bus?: BusInfo | null;
 }
 
@@ -232,28 +233,75 @@ export function Students() {
   const [query, setQuery] = useState('');
   const [showAdd, setShowAdd] = useState(false);
   const [editing, setEditing] = useState<Student | null>(null);
-  const [enrollId, setEnrollId] = useState<string | null>(null);
-  const [enrollment, setEnrollment] = useState<Record<string, string>>({});
+  const [manage, setManage] = useState<Student | null>(null);
+  const [mFile, setMFile] = useState<File | null>(null);
+  const [mPreview, setMPreview] = useState<string | null>(null);
+  const [mBusy, setMBusy] = useState(false);
+  const [mMsg, setMMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const faceInputRef = useRef<HTMLInputElement>(null);
 
-  const handleEnrollFace = async (studentId: string, file: File) => {
-    setEnrollId(studentId);
-    setEnrollment((prev) => ({ ...prev, [studentId]: 'uploading' }));
+  const chooseFaceFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setMFile(file);
+    setMMsg(null);
+    if (mPreview) URL.revokeObjectURL(mPreview);
+    setMPreview(URL.createObjectURL(file));
+  };
+
+  const closeFace = () => {
+    if (mBusy) return;
+    setManage(null);
+    setMFile(null);
+    if (mPreview) URL.revokeObjectURL(mPreview);
+    setMPreview(null);
+    setMMsg(null);
+    load();
+  };
+
+  const handleEnrollFace = async () => {
+    if (!manage || !mFile) return;
+    setMBusy(true);
+    setMMsg(null);
     try {
       const fd = new FormData();
-      fd.append('photo', file);
-      const res = await apiFetch(`/students/${studentId}/enroll-face`, {
-        method: 'POST',
-        body: fd,
-      });
+      fd.append('photo', mFile);
+      const res = await apiFetch(`/students/${manage.id}/enroll-face`, { method: 'POST', body: fd });
       const data = await res.json().catch(() => ({}));
-      setEnrollment((prev) => ({
-        ...prev,
-        [studentId]: res.ok ? 'enrolled' : `error: ${(data as any).message || res.status}`,
-      }));
+      if (res.ok) {
+        setMMsg({ ok: true, text: `✓ FACE ENROLLMENT SUCCESSFUL — ${manage.name} can now be recognized.` });
+        setManage((prev) => (prev ? { ...prev, faceEnrolled: true } : prev));
+        load();
+      } else {
+        setMMsg({ ok: false, text: (data as any).message || `Enrollment failed (${res.status})` });
+      }
     } catch (e: any) {
-      setEnrollment((prev) => ({ ...prev, [studentId]: 'error' }));
+      setMMsg({ ok: false, text: e.message || 'Enrollment failed' });
     } finally {
-      setEnrollId(null);
+      setMBusy(false);
+    }
+  };
+
+  const handleRemoveFace = async () => {
+    if (!manage) return;
+    if (!window.confirm(`Remove face enrollment for ${manage.name}? The student will no longer be recognized.`)) return;
+    setMBusy(true);
+    setMMsg(null);
+    try {
+      const res = await apiFetch(`/students/${manage.id}/enroll-face`, { method: 'DELETE' });
+      if (res.ok) {
+        setMMsg({ ok: true, text: `✓ FACE ENROLLMENT REMOVED — ${manage.name} is no longer recognized.` });
+        setManage((prev) => (prev ? { ...prev, faceEnrolled: false } : prev));
+        load();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setMMsg({ ok: false, text: (data as any).message || `Remove failed (${res.status})` });
+      }
+    } catch (e: any) {
+      setMMsg({ ok: false, text: e.message || 'Remove failed' });
+    } finally {
+      setMBusy(false);
     }
   };
 
@@ -353,6 +401,7 @@ export function Students() {
                   <th className="px-5 py-3 text-left font-medium">Ward / Tole</th>
                   <th className="px-5 py-3 text-left font-medium">Route Order</th>
                   <th className="px-5 py-3 text-left font-medium">Status</th>
+                  <th className="px-5 py-3 text-left font-medium">Face</th>
                   <th className="px-5 py-3 text-left font-medium">Actions</th>
                 </tr>
               </thead>
@@ -377,39 +426,31 @@ export function Students() {
                         </span>
                       </td>
                       <td className="px-5 py-3.5">
+                        {s.faceEnrolled ? (
+                          <span className="inline-flex items-center gap-1 text-xs font-medium text-teal-400">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></svg>
+                            Enrolled
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-xs text-white/30">
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /></svg>
+                            Not Enrolled
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3.5">
                         <div className="flex items-center gap-2">
                           <button onClick={() => { setEditing(s); setShowAdd(false); }}
                             className="px-2.5 py-1 rounded-md text-xs bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-white/40 hover:text-white/60 transition-all">Edit</button>
-                          <span className="flex items-center gap-1">
-                            <button
-                              onClick={() => document.getElementById(`face-${s.id}`)?.click()}
-                              disabled={enrollId === s.id}
-                              title="Enroll face for identification"
-                              className={`px-2.5 py-1 rounded-md text-xs border transition-all ${
-                                enrollment[s.id] === 'enrolled'
-                                  ? 'bg-teal-400/20 border-teal-400/30 text-teal-400'
-                                  : 'bg-white/[0.04] border-white/[0.08] text-white/40 hover:text-white/60'
-                              } ${enrollId === s.id ? 'opacity-50 cursor-wait' : ''}`}
-                            >
-                              {enrollId === s.id ? 'Uploading…' : enrollment[s.id] === 'enrolled' ? '✓ Face' : 'Face'}
-                            </button>
-                            <input
-                              id={`face-${s.id}`}
-                              type="file"
-                              accept="image/jpeg,image/png"
-                              className="hidden"
-                              disabled={enrollId !== null}
-                              onChange={(e) => {
-                                const file = e.target.files?.[0];
-                                if (file) handleEnrollFace(s.id, file);
-                                e.target.value = '';
-                              }}
-                            />
-                          </span>
+                          <button onClick={() => setManage(s)}
+                            className={`px-2.5 py-1 rounded-md text-xs border transition-all ${
+                              s.faceEnrolled
+                                ? 'bg-teal-400/20 border-teal-400/30 text-teal-400 hover:bg-teal-400/30'
+                                : 'bg-white/[0.04] border-white/[0.08] text-white/40 hover:text-white/60'
+                            }`}>
+                            {s.faceEnrolled ? 'Manage Face' : 'Enroll Face'}
+                          </button>
                         </div>
-                        {enrollment[s.id] && enrollment[s.id] !== 'enrolled' && enrollment[s.id] !== 'uploading' && (
-                          <p className="text-[10px] text-red-400 mt-1">{enrollment[s.id]}</p>
-                        )}
                       </td>
                     </tr>
                   );
@@ -419,6 +460,72 @@ export function Students() {
           </div>
         )}
       </div>
+
+      {manage && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={closeFace}>
+          <div className="bg-[#0b0f14] border border-white/[0.08] rounded-2xl w-full max-w-md overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="px-5 py-4 border-b border-white/[0.06] flex items-center justify-between">
+              <div>
+                <h2 className="text-sm font-semibold text-white/90">Student Face Enrollment</h2>
+                <p className="text-xs text-white/40 mt-0.5">{manage.name} · {manage.class || '—'}{manage.bus?.route?.name ? ` · ${manage.bus.route.name}` : ''}</p>
+              </div>
+              <button onClick={closeFace} className="text-white/30 hover:text-white/70">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+              </button>
+            </div>
+
+            <div className="px-5 py-5 space-y-4">
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-white/40 uppercase tracking-wider">Face Status:</span>
+                {manage.faceEnrolled ? (
+                  <span className="inline-flex items-center gap-1 text-teal-400 font-medium">✓ Enrolled</span>
+                ) : (
+                  <span className="text-white/30">○ Not Enrolled</span>
+                )}
+              </div>
+
+              <div className="flex flex-col items-center gap-3">
+                {mPreview ? (
+                  <img src={mPreview} alt="Face preview" className="w-32 h-32 object-cover rounded-xl border border-white/[0.08]" />
+                ) : (
+                  <div className="w-32 h-32 rounded-xl border border-dashed border-white/[0.15] flex items-center justify-center text-white/20">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></svg>
+                  </div>
+                )}
+                <button onClick={() => faceInputRef.current?.click()} disabled={mBusy}
+                  className="px-3 py-1.5 rounded-lg text-xs bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-white/60 transition-all disabled:opacity-50">
+                  {mFile ? 'Change Photo…' : 'Choose Photo…'}
+                </button>
+                <input ref={faceInputRef} type="file" accept="image/jpeg,image/png" className="hidden" onChange={chooseFaceFile} />
+              </div>
+
+              {mMsg && (
+                <p className={`text-xs rounded-lg px-3 py-2 ${mMsg.ok ? 'bg-teal-400/10 border border-teal-400/20 text-teal-400' : 'bg-red-400/10 border border-red-400/20 text-red-400'}`}>
+                  {mMsg.text}
+                </p>
+              )}
+
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  onClick={handleEnrollFace}
+                  disabled={mBusy || !mFile}
+                  title="Upload & Enroll"
+                  className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-teal-400/10 hover:bg-teal-400/20 border border-teal-400/30 text-teal-400 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+                  {mBusy ? 'Working…' : manage.faceEnrolled ? 'Replace Photo & Re-Enroll' : 'Upload & Enroll'}
+                </button>
+                {manage.faceEnrolled && (
+                  <button
+                    onClick={handleRemoveFace}
+                    disabled={mBusy}
+                    className="px-3 py-2 rounded-lg text-xs bg-red-400/10 hover:bg-red-400/20 border border-red-400/30 text-red-400 transition-all disabled:opacity-50">
+                    Remove Enrollment
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

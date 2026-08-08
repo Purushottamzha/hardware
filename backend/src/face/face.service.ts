@@ -57,4 +57,15 @@ export class FaceService {
     }
     return res.json();
   }
+
+  async deleteStudent(studentId: string): Promise<{ deleted: boolean; studentId: string }> {
+    const form = new FormData();
+    form.append('studentId', studentId);
+
+    const res = await fetch(`${this.baseUrl}/delete-student`, { method: 'DELETE', body: form });
+    if (!res.ok) {
+      throw new Error(`face-service /delete-student failed: ${res.status}`);
+    }
+    return res.json();
+  }
 }

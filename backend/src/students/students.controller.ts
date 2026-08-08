@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Delete,
   Body,
   Param,
   Query,
@@ -203,6 +204,13 @@ export class StudentsController {
 
     await this.studentsService.saveFaceEmbedding(id, result.embedding, relativePath);
     return { studentId: id, faceEnrolled: true, photoPath: relativePath };
+  }
+
+  @Delete(':id/enroll-face')
+  async removeFaceEnrollment(@Param('id') id: string) {
+    await this.faceService.deleteStudent(id);
+    await this.studentsService.removeFaceEnrollment(id);
+    return { studentId: id, faceEnrolled: false };
   }
 
   @Post(':id/face-token')
