@@ -182,6 +182,14 @@ Expected: latest rows show `identMethod='FACE'` and a real `identConfidence`.
 - Phone: 192.168.1.79 reachable (ping OK); PHONE device lastSeenCounter 36 (real phone mints working)
 - Enrolled: 1 real student (Sabina Thapa), latest real attendance event id 7 (BOARDED, FACE, verified, confidence ≈ 1.0)
 
+> **Cold-start verified 2026-08-08:** stopped Mosquitto + face service + backend + dashboard,
+> then restarted strictly in §4 order (`ops\start-native-stack.bat` covers steps 3+4). All
+> health checks passed; backend logged `Connected to Mosquitto` on the LAN broker; CORS
+> header `http://192.168.1.90:5173` present; `/identify` with the real Sabina photo returned
+> confidence 1.0 with **no re-enrollment needed**. `ops\start-native-stack.bat` was aligned
+> to `ops\start-backend-native.bat` (`MOSQUITTO_HOST=192.168.1.90`,
+> `DASHBOARD_ORIGIN=http://localhost:5173,http://192.168.1.90:5173`).
+
 ## 15. Post-demo cleanup
 
 - `git status` — expect only intended files.
