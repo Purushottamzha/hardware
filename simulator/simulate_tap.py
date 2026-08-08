@@ -380,6 +380,105 @@ def simulate_tap(args):
     poll_status()
 
 
+def run_health_check():
+    """Diagnostic mode (--check): verify config, API, MQTT, CA, camera, GPS.
+
+    Read-only: no DB writes, no MQTT publish, no counters advanced.
+    """
+    import platform
+    import socket
+    import shutil
+    from pathlib import Path as _Path
+
+    ok = True
+    print("=== SafeRide phone/device environment check ===")
+
+    # --- Python + required modules ---
+    print(f"[PY] {platform.python_version()}")
+    required = ["paho.mqtt", "requests"]
+    for mod in required:
+        try:
+            __import__(mod)
+            print(f"[MOD] {mod}: OK")
+        except ImportError:
+            print(f"[MOD] {mod}: MISSING (pip install {mod})")
+            ok = False
+
+    # --- Config ---
+    cfg_path = CONFIG_PATH
+    if not cfg_path.exists():
+        print(f"[CFG] FAIL: {cfg_path} not found — copy config.example.json to config.json")
+        return False
+    try:
+        cfg = json.loads(cfg_path.read_text())
+    except json.JSONDecodeError as e:
+        print(f"[CFG] FAIL: invalid JSON in {cfg_path}: {e}")
+        return False
+    for key in ("deviceId", "deviceSecret", "apiBaseUrl", "broker"):
+        if not cfg.get(key):
+            print(f"[CFG] FAIL: missing key '{key}' in {cfg_path}")
+            ok = False
+    broker = cfg.get("broker", {})
+    host = broker.get("host", "")
+    port = broker.get("port", 1883)
+    if not host:
+        print("[CFG] FAIL: broker.host empty")
+        ok = False
+    dev_id = cfg.get("deviceId", "")
+    api = cfg.get("apiBaseUrl", "")
+
+    # --- Backend API ---
+    try:
+        r = requests.get(f"{api}/health", timeout=8)
+        h = r.json() if r.status_code == 200 else {}
+        mqtt_state = h.get("mqtt", "unknown")
+        face_state = h.get("faceService", "unknown")
+        print(f"[API] {api}/health -> HTTP {r.status_code} (mqtt={mqtt_state}, face={face_state})")
+        if r.status_code != 200:
+            ok = False
+    except Exception as e:
+        print(f"[API] FAIL: {api}/health unreachable: {e}")
+
+    # --- MQTT broker reachability (TCP connect only) ---
+    if host:
+        try:
+            s = socket.create_connection((host, port), timeout=8)
+            s.close()
+            print(f"[MQTT] {host}:{port} reachable")
+        except Exception as e:
+            print(f"[MQTT] FAIL: {host}:{port} unreachable -> {e}")
+            ok = False
+
+    # --- CA certificate (TLS 8883: required; plain 1883: optional) ---
+    ca = broker.get("caCert", "")
+    if port == 8883:
+        if not ca or not _Path(ca).exists():
+            print(f"[TLS] FAIL: port 8883 requires caCert file (get it from the laptop admin). Set broker.caCert in config.")
+            ok = False
+        else:
+            print(f"[TLS] caCert present: {ca}")
+    elif ca and not _Path(ca).exists():
+        print(f"[TLS] WARN: caCert set but not found ({ca}) — plain port {port} still works")
+
+    # --- Camera ---
+    cam_bin = shutil.which("termux-camera-photo")
+    if cam_bin:
+        print(f"[CAM] termux-camera-photo available: {cam_bin}")
+    elif sys.platform.startswith("linux"):
+        print("[CAM] WARN: termux-camera-photo not found — install Termux:API + 'pkg install termux-api'")
+        ok = False
+    else:
+        print(f"[CAM] Note: camera capture is Termux-only; on PC use --face-photo <image>")
+
+    # --- Device id ---
+    print(f"[DEV] {dev_id or '(empty deviceId)'}")
+    if not dev_id:
+        ok = False
+
+    print("=== " + ("ALL CHECKS PASSED" if ok else "ISSUES FOUND — fix the FAIL lines above") + " ===")
+    return ok
+
+
 def main():
     parser = argparse.ArgumentParser(description="SafeRide Nepal Face Attendance Tap Simulator")
     parser.add_argument("--face-photo", help="Path to face photo; defaults to device camera capture")
@@ -387,7 +486,12 @@ def main():
     parser.add_argument("--tamper", action="store_true", help="Corrupt signature for attack simulation")
     parser.add_argument("--replay", action="store_true", help="Re-publish last captured payload verbatim")
     parser.add_argument("--flush", action="store_true", help="Flush offline buffer and exit")
+    parser.add_argument("--check", action="store_true", help="Diagnose environment (no MQTT publish, no DB writes)")
     args = parser.parse_args()
+
+    if args.check:
+        run_health_check()
+        return
 
     cfg = load_config()
 

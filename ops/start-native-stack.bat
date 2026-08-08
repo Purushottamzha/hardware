@@ -4,7 +4,7 @@ REM SafeRide Nepal — NATIVE STACK startup (no Docker, no WSL)
 REM
 REM Requires (already installed on this machine):
 REM   - PostgreSQL 17 service ("postgresql-x64-17")
-REM   - Mosquitto LAN broker on 0.0.0.0:1883 + 0.0.0.0:8883 (see FINAL_DEMO_RUNBOOK §3)
+REM   - Mosquitto LAN broker on 0.0.0.0:1883 + 0.0.0.0:8883 (see docs/FINAL_DEMO_RUNBOOK §3)
 REM   - Node 22 + backend deps (backend/node_modules)
 REM   - Python 3.13 venv (face-service/native-venv)
 REM

@@ -95,11 +95,11 @@ Health checks: `http://localhost:3000/health` (backend, MQTT status included), `
 ## Demo
 
 Full scripted demo (happy path, tamper, replay, sequence, auto-suspend) in `DEMO.md`.
-E2E walkthrough including phone steps and the verified 2026-08-08 results: `FINAL_DEMO_RUNBOOK.md`.
+E2E walkthrough including phone steps and the verified 2026-08-08 results: `docs/FINAL_DEMO_RUNBOOK.md`.
 
 ## Troubleshooting
 
-See `FINAL_DEMO_RUNBOOK.md` §13. Highlights:
+See `docs/FINAL_DEMO_RUNBOOK.md` §13. Highlights:
 
 | Symptom | Fix |
 |---|---|
@@ -115,4 +115,4 @@ See `FINAL_DEMO_RUNBOOK.md` §13. Highlights:
 
 ## Final status
 
-`FINAL_IMPLEMENTATION_STATUS.md` and `FINAL_DEMO_RUNBOOK.md` describe the verified 2026-08-08 freeze: full laptop-side fence (enrollment, identify, confidence gate, face token, HMAC, MQTT QoS1, PostgreSQL, verified state transition) plus phone-verified partials (device counter 4→36 on the LAN).
+`FINAL_IMPLEMENTATION_STATUS.md` and `docs/FINAL_DEMO_RUNBOOK.md` describe the verified 2026-08-08 freeze: full laptop-side fence (enrollment, identify, confidence gate, face token, HMAC, MQTT QoS1, PostgreSQL, verified state transition) plus phone-verified partials (device counter 4→36 on the LAN).
