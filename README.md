@@ -61,7 +61,7 @@ scanner bridge — a live front-camera preview with a face oval, automatic scans
 - Failure: `SYSTEM OFFLINE` — never shows false success.
 - Camera permission: Android Chrome needs a one-time `chrome://flags` → *Insecure origins treated as secure* entry for `http://<laptop-ip>:8100` (or use the HTTPS listener on :8443 with the self-signed cert in `scanner-bridge/certs/`).
 
-The Termux CLI (`simulate_tap.py` / `phone_face_tap.py`) remains as a fallback/debug transport.
+The Termux CLI (`simulate_tap.py`) remains as a fallback/debug transport.
 
 ## Identification path
 
@@ -96,6 +96,16 @@ Health checks: `http://localhost:3000/health` (backend, MQTT status included), `
 
 Full scripted demo (happy path, tamper, replay, sequence, auto-suspend) in `DEMO.md`.
 E2E walkthrough including phone steps and the verified 2026-08-08 results: `docs/FINAL_DEMO_RUNBOOK.md`.
+
+## Team / Android setup
+
+New team members connect an Android phone via `simulator/setup_phone.sh`
+(native stack: HTTP `http://LAPTOP_IP:3000`, MQTT `LAPTOP_IP:8883` TLS).
+Full walkthrough — architecture, phone setup, admin MQTT step, TLS CA,
+verification, and troubleshooting: **`docs/ANDROID_TEAM_SETUP.md`**.
+
+Safe phone-config template (placeholders only, no secrets):
+**`config/config.example.json`**.
 
 ## Troubleshooting
 

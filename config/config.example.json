@@ -1,0 +1,15 @@
+{
+  "deviceId": "bus-<bus-id>-door-PHONE-TEAM1",
+  "deviceSecret": "",
+  "apiBaseUrl": "http://LAPTOP_IP:3000",
+  "broker": {
+    "host": "LAPTOP_IP",
+    "port": 8883,
+    "username": "",
+    "password": "",
+    "caCert": "/sdcard/Download/ca.crt"
+  },
+  "topic": "saferide/hardware/{deviceId}/attendance",
+  "counter": 0,
+  "faceMatchThreshold": 0.6
+}
