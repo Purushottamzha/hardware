@@ -13,7 +13,7 @@ async function bootstrap() {
   }));
 
   app.enableCors({
-    origin: process.env.DASHBOARD_ORIGIN || 'http://localhost:5173',
+    origin: (process.env.DASHBOARD_ORIGIN || 'http://localhost:5173').split(','),
     credentials: true,
   });
 
