@@ -62,6 +62,7 @@
 | 3 | Face service | `face-service\native-venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 5001` |
 | 4 | Backend | `ops\start-backend-native.bat` (binds 0.0.0.0:3000; `MOSQUITTO_HOST=192.168.1.90` → subscribes on the LAN broker, same one the phone publishes to) |
 | 5 | Dashboard | `cd dashboard; npm run dev -- --port 5173 --host` |
+| 6 | Scanner bridge | `scanner-bridge\run_bridge.bat` (0.0.0.0:8100 — student-facing web scanner UI at `/scanner`) |
 
 Health checks:
 - Backend: `curl http://localhost:3000/health` → `{"status":"ok"}`
@@ -70,9 +71,9 @@ Health checks:
 
 ## 4. One-shot native startup (all services)
 
-`ops\start-native-stack.bat` starts the face service + backend with the correct env
-(the LAN broker must already be running — see §3, step 2). Logs are written to
-`native-backend.log`.
+`ops\start-native-stack.bat` starts the face service + scanner bridge + backend with the
+correct env (the LAN broker must already be running — see §3, step 2). Logs are written to
+`native-backend.log` and `scanner-bridge\bridge.log`.
 
 ## 5. Enroll a student's face
 
@@ -145,6 +146,38 @@ real Sabina photo (confidence 1.0) and a blank photo (studentId null).
 > (b) confirm working `http://192.168.1.90:3000/health` in a laptop browser; (c) verify
 > firewall allow rules for Node.js / Mosquitto / python (they exist on this laptop).
 
+## 9b. Web scanner UI (phone browser, no Termux camera needed)
+
+The scanner bridge serves a student-facing terminal page. The phone (mounted at the bus
+entrance) opens it in the stock Android Chrome and the FRONT CAMERA shows live preview
+with a face oval guide; scanning is automatic every ~3 s.
+
+```text
+http://192.168.1.90:8100/scanner
+```
+
+Verification status: the bridge E2E (identify → token → HMAC → MQTT → PostgreSQL) was
+verified on 2026-08-08 with the real Sabina photo (recorded = true, AttendanceEvent id 8)
+and a blank photo (FACE NOT RECOGNIZED, no event). The camera preview itself must be
+granted on the phone:
+
+- Android Chrome blocks `getUserMedia` on plain-HTTP LAN origins.
+  **One-time fix on the phone:** open `chrome://flags` → "Insecure origins treated as
+  secure" → add `http://192.168.1.90:8100` → Relaunch. Then open the scanner URL and
+  allow the camera prompt.
+- The page is fully self-contained (no app install). The existing `phone_face_tap.py`
+  CLI remains the supported fallback transport (§9) and is untouched.
+
+## 9b. Dashboard → Bus Scanner page
+
+Dashboard nav → **Bus Scanner** (`/scanner`). Shows, refreshed every 5 s:
+
+- Scanner terminal: device id, status ONLINE/OFFLINE, bus, route, last counter.
+- Last scan: student, event type, time, method (FACE) and confidence.
+- System: Backend / Face Service / MQTT status (from `/health`).
+- Today: on-board count, enrolled students, terminals — plus a direct link to open
+  the phone scanner UI.
+
 ## 10. Dashboard verification
 
 - Open `http://192.168.1.90:5173`, login with admin phone/password.
@@ -186,9 +219,10 @@ Expected: latest rows show `identMethod='FACE'` and a real `identConfidence`.
 - Mosquitto LAN broker: running (0.0.0.0:1883 plain + 0.0.0.0:8883 TLS)
 - Face service: running on 127.0.0.1:5001 (health OK)
 - Backend: running on 0.0.0.0:3000 (health OK; MQTT connected to LAN broker)
-- Dashboard: running on 0.0.0.0:5173 (HTTP 200)
+- Scanner bridge: running on 0.0.0.0:8100 (student web UI `/scanner`; device `bus-ba2kha4521-door-WEB` registered — counter owned by the bridge only)
+- Dashboard: running on 0.0.0.0:5173 (HTTP 200; **Bus Scanner** page at `/scanner`)
 - Phone: 192.168.1.79 reachable (ping OK); PHONE device lastSeenCounter 36 (real phone mints working)
-- Enrolled: 1 real student (Sabina Thapa), latest real attendance event id 7 (BOARDED, FACE, verified, confidence ≈ 1.0)
+- Enrolled: 1 real student (Sabina Thapa), latest real attendance event ids 8–9 (FACE, verified; bridge E2E)
 
 > **Cold-start verified 2026-08-08:** stopped Mosquitto + face service + backend + dashboard,
 > then restarted strictly in §4 order (`ops\start-native-stack.bat` covers steps 3+4). All
@@ -204,3 +238,7 @@ Expected: latest rows show `identMethod='FACE'` and a real `identConfidence`.
 - Logs (`*.log`), uploads, `.env`, `simulator/config.json`, `mosquitto/certs/` are gitignored.
 - Reset demo state if needed:
   `UPDATE "Student" SET "currentState"='NOT_BOARDED' WHERE id='cmrnelmsu000bo3g47weaqvis';`
+
+  (After face-testing she may be left at `ARRIVED_SCHOOL` — reset restores the clean
+  "student boards" story. The scanner-bridge counter in `scanner-bridge/state.json`
+  keeps advancing with the WEB device and needs no reset.)

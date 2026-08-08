@@ -8,6 +8,11 @@ import { loadSecret } from '../common/config/secret-loader';
 export class MqttService implements OnModuleInit {
   private readonly logger = new Logger(MqttService.name);
   private client: mqtt.MqttClient;
+  private connected = false;
+
+  get isConnected(): boolean {
+    return this.connected;
+  }
 
   constructor(private attendanceService: AttendanceService) {}
 
@@ -39,6 +44,7 @@ export class MqttService implements OnModuleInit {
     this.client = mqtt.connect(`${scheme}://${host}:${port}`, tlsOptions);
 
     this.client.on('connect', () => {
+      this.connected = true;
       this.logger.log('Connected to Mosquitto');
       this.client.subscribe('saferide/hardware/+/attendance', { qos: 1 });
     });
@@ -54,7 +60,12 @@ export class MqttService implements OnModuleInit {
     });
 
     this.client.on('error', (err) => {
+      this.connected = false;
       this.logger.error(`MQTT error: ${err.message}`);
+    });
+
+    this.client.on('close', () => {
+      this.connected = false;
     });
   }
 }

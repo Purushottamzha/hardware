@@ -5,5 +5,6 @@ import { AttendanceModule } from '../attendance/attendance.module';
 @Module({
   imports: [AttendanceModule],
   providers: [MqttService],
+  exports: [MqttService],
 })
 export class MqttModule {}

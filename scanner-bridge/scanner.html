@@ -1,0 +1,371 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>SafeRide Nepal â€” Bus Scanner</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: #05070b;
+    color: #e8f1ee;
+    font-family: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    text-align: center;
+    padding: 14px 12px 10px;
+    background: linear-gradient(180deg, #0a0f14, #05070b);
+  }
+  header h1 { font-size: 22px; letter-spacing: 2px; color: #2dd4bf; font-weight: 800; }
+  header p { font-size: 12px; letter-spacing: 4px; color: #5b6b72; text-transform: uppercase; margin-top: 2px; }
+
+  .stage {
+    flex: 1;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 0;
+  }
+  video {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1);
+    display: none;
+    background: #0a0f14;
+  }
+  video.live { display: block; }
+  .overlay-mask {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(closest-side, transparent 61%, rgba(5,7,11,0.88) 62%, rgba(5,7,11,0.97) 100%);
+  }
+  .face-oval {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: min(68vw, 300px);
+    height: min(72vw, 320px);
+    border: 3px solid rgba(45, 212, 191, 0.9);
+    border-radius: 50%;
+    box-shadow: 0 0 0 9999px rgba(5, 7, 10, 0.55), 0 0 24px rgba(45, 212, 191, 0.35);
+    pointer-events: none;
+    transition: border-color .3s;
+  }
+  .face-oval.detect { border-color: #fbbf24; box-shadow: 0 0 0 9999px rgba(5,7,10,0.5), 0 0 40px rgba(251,191,36,0.5); }
+
+  .banner {
+    position: absolute;
+    left: 0; right: 0;
+    top: 12%;
+    text-align: center;
+    padding: 0 16px;
+    z-index: 5;
+    pointer-events: none;
+  }
+  .banner h2 { font-size: 34px; font-weight: 800; letter-spacing: 1px; text-shadow: 0 2px 12px rgba(0,0,0,.8); }
+  .banner .sub { margin-top: 6px; font-size: 16px; color: #9fb3c0; letter-spacing: 3px; text-transform: uppercase; }
+  .banner .hint { margin-top: 10px; font-size: 15px; color: #d7e3e9; }
+
+  .state-pill {
+    position: absolute;
+    bottom: 16%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(9, 13, 17, 0.92);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 999px;
+    padding: 10px 22px;
+    font-size: 16px;
+    letter-spacing: 1px;
+    font-weight: 600;
+    color: #e8f1ee;
+    white-space: nowrap;
+    z-index: 6;
+  }
+  .state-pill.ready { color: #2dd4bf; border-color: rgba(45,212,191,.4); }
+  .state-pill.detect { color: #fbbf24; border-color: rgba(251,191,36,.5); }
+  .state-pill.warn { color: #f87171; border-color: rgba(248,113,113,.5); }
+
+  .result {
+    position: absolute;
+    inset: 0;
+    background: rgba(4, 8, 10, 0.96);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 24px;
+    z-index: 10;
+    animation: pop .25s ease-out;
+  }
+  @keyframes pop { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: scale(1); } }
+  .result .ok-icon {
+    width: 84px; height: 84px; border-radius: 50%;
+    background: rgba(45, 212, 191, 0.15);
+    border: 3px solid #2dd4bf;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 44px; color: #2dd4bf;
+    margin-bottom: 18px;
+  }
+  .result .bad {
+    width: 84px; height: 84px; border-radius: 50%;
+    background: rgba(248, 113, 113, 0.12);
+    border: 3px solid #f87171;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 34px; color: #f87171;
+    margin-bottom: 18px;
+  }
+  .result .recorded { font-size: 20px; letter-spacing: 3px; color: #2dd4bf; font-weight: 800; text-transform: uppercase; }
+  .result .name { font-size: 40px; font-weight: 800; margin: 10px 0 4px; }
+  .result .meta { font-size: 17px; color: #a8bbc6; line-height: 1.7; }
+  .result .conf { margin-top: 14px; font-size: 20px; color: #fbbf24; font-weight: 700; }
+  .result .unknown { font-size: 26px; font-weight: 800; color: #f87171; }
+  .result .unknown-sub { margin-top: 8px; font-size: 16px; color: #a8bbc6; }
+  .result .now { margin-top: auto; padding-top: 14px; font-size: 15px; color: #6b7f8a; }
+
+  .controls {
+    display: flex;
+    gap: 12px;
+    padding: 14px;
+    justify-content: center;
+    background: #070b0f;
+  }
+  button {
+    background: rgba(45, 212, 191, 0.14);
+    border: 1px solid rgba(45, 212, 191, 0.45);
+    color: #2dd4bf;
+    border-radius: 999px;
+    padding: 12px 26px;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    cursor: pointer;
+  }
+  button:active { transform: scale(0.97); }
+  footer {
+    text-align: center;
+    font-size: 11px;
+    color: #43555d;
+    padding: 6px;
+    background: #05070b;
+  }
+  .offline { color: #f87171; }
+  .online { color: #2dd4bf; }
+</style>
+</head>
+<body>
+<header>
+  <h1>SAFERIDE NEPAL</h1>
+  <p>Face Attendance</p>
+</header>
+
+<div class="stage">
+  <video id="video" playsinline muted autoplay></video>
+  <div class="face-oval" id="oval"></div>
+  <div class="overlay-mask"></div>
+
+  <div class="banner">
+    <h2 id="bannerTitle">BUS SCANNER</h2>
+    <div class="sub" id="bannerSub">Ready for the next student</div>
+    <div class="hint" id="bannerHint">Position your face inside the frame</div>
+  </div>
+
+  <div class="state-pill ready" id="pill">CAMERA READY</div>
+
+  <div class="result" id="result" style="display:none">
+    <div class="ok" id="resIcon"></div>
+    <div class="recorded" id="resRecorded"></div>
+    <div class="name" id="resName"></div>
+    <div class="meta" id="resMeta"></div>
+    <div class="conf" id="resConf"></div>
+    <div class="unknown" id="resUnknown"></div>
+    <div class="unknown-sub" id="resUnknownSub"></div>
+    <div class="now" id="resNow"></div>
+  </div>
+</div>
+
+<div class="controls">
+  <button id="startBtn">START CAMERA</button>
+  <button id="scanBtn" style="display:none">SCAN NOW</button>
+</div>
+
+<footer>
+  <span id="sysDot" class="offline">â—</span> <span id="sysTxt">Checking systemâ€¦</span>
+</footer>
+
+<script>
+(function () {
+  'use strict';
+  var video = document.getElementById('video');
+  var oval = document.getElementById('oval');
+  var pill = document.getElementById('pill');
+  var result = document.getElementById('result');
+  var startBtn = document.getElementById('startBtn');
+  var scanBtn = document.getElementById('scanBtn');
+  var sysDot = document.getElementById('sysDot');
+  var sysTxt = document.getElementById('sysTxt');
+
+  var stream = null;
+  var busy = false;
+  var videoLive = false;
+
+  function setState(name, cls) {
+    pill.textContent = name;
+    pill.className = 'state-pill ' + (cls || '');
+  }
+
+  function showResult(show) { result.style.display = show ? 'flex' : 'none'; }
+
+  function hideResultAndReady() {
+    showResult(false);
+    setState('CAMERA READY', 'ready');
+    schedule();
+  }
+
+  function startCamera() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      sysTxt.textContent = 'Camera not available â€” use stock Android browser/Chrome.';
+      sysDot.className = 'offline';
+      return;
+    }
+    startBtn.disabled = true;
+    startBtn.textContent = 'Startingâ€¦';
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 } }, audio: false })
+      .then(function (s) {
+        stream = s;
+        video.srcObject = s;
+        video.classList.add('live');
+        videoLive = true;
+        startBtn.style.display = 'none';
+        scanBtn.style.display = 'inline-block';
+        setState('CAMERA READY', 'ready');
+        schedule();
+      })
+      .catch(function () {
+        startBtn.disabled = false;
+        startBtn.textContent = 'Camera blocked â€” grant permission';
+        setState('CAMERA ACCESS DENIED', 'warn');
+      });
+  }
+
+  function captureJpeg() {
+    var canvas = document.createElement('canvas');
+    var w = 480;
+    var scale = w / video.videoWidth;
+    canvas.width = w;
+    canvas.height = Math.round(video.videoHeight * scale);
+    var ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL('image/jpeg', 0.8);
+  }
+
+  function doScan(manual) {
+    if (busy || !videoLive) return;
+    busy = true;
+    oval.classList.add('detect');
+    setState('IDENTIFYINGâ€¦', 'detect');
+
+    fetch('/identify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ photo: captureJpeg() })
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        oval.classList.remove('detect');
+        if (d.recorded === false && d.service === 'unreachable') {
+          setState('SYSTEM OFFLINE', 'warn');
+          return;
+        }
+        if (!d.student) {
+          document.getElementById('resIcon').className = 'bad';
+          document.getElementById('resIcon').textContent = 'âœ•';
+          document.getElementById('resRecorded').textContent = '';
+          document.getElementById('resName').textContent = 'FACE NOT RECOGNIZED';
+          document.getElementById('resMeta').textContent = 'Please try again';
+          document.getElementById('resConf').textContent = '';
+          document.getElementById('resUnknown').textContent = '';
+          document.getElementById('resUnknownSub').textContent = '';
+          document.getElementById('resNow').textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+          showResult(true);
+          setTimeout(hideResultAndReady, 2500);
+          return;
+        }
+        showResult(true);
+        if (d.recorded) {
+          document.getElementById('resIcon').className = 'ok';
+          document.getElementById('resIcon').textContent = 'âœ“';
+          document.getElementById('resRecorded').textContent = 'ATTENDANCE RECORDED';
+          document.getElementById('resName').textContent = (d.student.studentName || '').toUpperCase();
+          document.getElementById('resMeta').innerHTML =
+            (d.student.class || '') + '<br>' +
+            'BUS ' + (d.student.busId || '') + (d.student.routeName ? ' Â· ' + d.student.routeName : '');
+          document.getElementById('resConf').textContent = 'Confidence: ' + (d.confidence * 100).toFixed(1) + '%';
+          document.getElementById('resUnknown').textContent = '';
+          document.getElementById('resUnknownSub').textContent = '';
+          document.getElementById('resNow').textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+          setTimeout(hideResultAndReady, 4500);
+        } else {
+          document.getElementById('resIcon').className = 'bad';
+          document.getElementById('resIcon').textContent = '!';
+          document.getElementById('resRecorded').textContent = 'NOT RECORDED';
+          document.getElementById('resName').textContent = (d.student.studentName || '').toUpperCase();
+          document.getElementById('resMeta').textContent = d.message || 'Attendance could not be recorded';
+          document.getElementById('resConf').textContent = '';
+          document.getElementById('resUnknown').textContent = '';
+          document.getElementById('resUnknownSub').textContent = '';
+          document.getElementById('resNow').textContent = '';
+          setTimeout(hideResultAndReady, 3000);
+        }
+      })
+      .catch(function () {
+        oval.classList.remove('detect');
+        setState('SYSTEM OFFLINE', 'warn');
+        setTimeout(function () { setState('CAMERA READY', 'ready'); schedule(); }, 3000);
+      })
+      .then(function () {
+        busy = false;
+      });
+  }
+
+  function schedule() {
+    if (busy) return;
+    setTimeout(function () { doScan(false); }, 2800);
+  }
+
+  function scanNow() { doScan(true); }
+
+  startBtn.addEventListener('click', startCamera);
+  scanBtn.addEventListener('click', scanNow);
+
+  function checkHealth() {
+    fetch('/health')
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        var ok = d.backend === 'ok' && d.mqtt === 'connected' && d.faceService === 'online';
+        sysDot.className = ok ? 'online' : 'offline';
+        sysTxt.textContent = ok ? 'System online' : 'System unavailable â€” check laptop services';
+      })
+      .catch(function () {
+        sysDot.className = 'offline';
+        sysTxt.textContent = 'Bridge unavailable';
+      });
+  }
+  checkHealth();
+  setInterval(checkHealth, 10000);
+})();
+</script>
+</body>
+</html>

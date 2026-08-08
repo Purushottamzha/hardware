@@ -58,6 +58,15 @@ export class FaceService {
     return res.json();
   }
 
+  async ping(): Promise<boolean> {
+    try {
+      const res = await fetch(`${this.baseUrl}/health`, { signal: AbortSignal.timeout(1500) });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
   async deleteStudent(studentId: string): Promise<{ deleted: boolean; studentId: string }> {
     const form = new FormData();
     form.append('studentId', studentId);

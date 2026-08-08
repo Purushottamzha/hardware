@@ -46,6 +46,9 @@ simulator/config.*.json
 # Face-service runtime store (persisted enrollments) — regenerated on enroll
 face-service/enrollments.json
 
+# Scanner-bridge runtime state (device counter)
+scanner-bridge/state.json
+
 # IDE
 .vscode/
 .idea/

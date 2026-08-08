@@ -20,6 +20,7 @@ import { Alerts } from './pages/Alerts';
 import { AuditTrail } from './pages/AuditTrail';
 import { SecurityLog } from './pages/SecurityLog';
 import { DeviceRegistry } from './pages/DeviceRegistry';
+import { BusScanner } from './pages/BusScanner';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:3000';
@@ -159,6 +160,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
     { href: '/map', icon: '🗺', label: 'Live Map' },
     // { href: '/ops', icon: '◆', label: 'Live Ops' },
     { href: '/students', icon: '👤', label: 'Students' },
+    { href: '/scanner', icon: '📷', label: 'Bus Scanner' },
     { href: '/devices', icon: '📡', label: 'Devices' },
     { href: '/alerts', icon: '⚠', label: 'Alerts' },
     { href: '/security', icon: '🔒', label: 'Security Log' },
@@ -316,6 +318,7 @@ function App() {
                       <Route path="/map" element={<LiveMap />} />
                       <Route path="/ops" element={<LiveOps />} />
                       <Route path="/students" element={<Students />} />
+                      <Route path="/scanner" element={<BusScanner />} />
                       <Route path="/alerts" element={<Alerts />} />
                       <Route path="/audit" element={<AuditTrail />} />
                       <Route path="/security" element={<SecurityLog />} />
