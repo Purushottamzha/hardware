@@ -36,8 +36,8 @@ Legend: **VERIFIED** = exercised end-to-end on this laptop today (2026-08-08).
 
 ## 5. MQTT BROKER — VERIFIED (native LAN flavor)
 - Extra Mosquitto instance from repo certs (`C:\ProgramData\saferide-mosquitto\`) listening on `0.0.0.0:1883` (plain) and `0.0.0.0:8883` (TLS).
-- Windows-service broker stays loopback-only by default (needs admin to edit) — documented in RUNBOOK §13.
-- Publish from simulator (plain 1883) → backend MQTT consumer → log: `MQTT event from bus-ba2kha4521-door-SIM: counter=18`. TLS 8883 verified with `--insecure` client (cert SAN = localhost/LAN IPs; phone client uses `tls insecure set True`).
+- **Important wiring:** the backend subscribes on the LAN broker (`MOSQUITTO_HOST=192.168.1.90:1883` in `ops\start-backend-native.bat`) — NOT the loopback-only Windows service (127.0.0.1:1883). The real phone publishes to `192.168.1.90:1883` — same broker. On 2026-08-08 an event published from the phone bundle (192.168.1.90:1883) reached the backend: `MQTT event from bus-ba2kha4521-door-SIM: counter=23`.
+- Publish from phone bundle (plain 1883, MQTT user auth) → backend consumer → `AttendanceEvent` id 6 (ARRIVED_SCHOOL, verified, FACE, confidence ~1.0). TLS 8883 verified earlier with `--insecure` client (cert SAN = localhost/LAN IPs; phone client uses `tls_insecure_set` True).
 - QoS 1, topic `saferide/hardware/<deviceId>/attendance`.
 
 ## 6. DATABASE — VERIFIED
@@ -78,7 +78,7 @@ Legend: **VERIFIED** = exercised end-to-end on this laptop today (2026-08-08).
 
 | # | Item | Status |
 |---|---|---|
-| 1 | Mosquitto Windows service stays loopback-only (admin rights unavailable). Workaround: separate LAN broker instance (documented, verified). | Workaround in place |
+| 1 | Mosquitto Windows service stays loopback-only (admin rights unavailable). Workaround: separate LAN broker instance that BOTH backend and phone use (verified end-to-end). | Workaround in place |
 | 2 | Face-service uses a bundled `face_landmarker.task` model (3.5 MB, committed; no auto-download). | Documented |
 | 3 | Only 1 real student photo available → 1 real enrollment; 19 students remain mock data for the demo DB. | Expected demo constraint |
 | 4 | Live Feed push (WebSocket) verified via data + events; visual browser screenshot requires operator | PARTIAL |

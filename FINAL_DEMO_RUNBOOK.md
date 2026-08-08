@@ -49,9 +49,9 @@
 | # | Component | Command (PowerShell, repo root) |
 |---|---|---|
 | 1 | PostgreSQL 17 | Windows service (already running) |
-| 2 | Mosquitto LAN broker | `mosquitto -c C:\ProgramData\saferide-mosquitto\mosquitto.lan.conf -p 1883` (started once; listening on 0.0.0.0:1883 + 0.0.0.0:8883) |
+| 2 | Mosquitto LAN broker | `mosquitto -c C:\ProgramData\saferide-mosquitto\mosquitto.lan.conf` (listening on 0.0.0.0:1883 + 0.0.0.0:8883) — **this is the broker the backend AND the phone use** |
 | 3 | Face service | `face-service\native-venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 5001` |
-| 4 | Backend | `ops\start-backend-native.bat` (binds 0.0.0.0:3000, connects to face service + Mosquitto) |
+| 4 | Backend | `ops\start-backend-native.bat` (binds 0.0.0.0:3000; `MOSQUITTO_HOST=192.168.1.90` → subscribes on the LAN broker, same one the phone publishes to) |
 | 5 | Dashboard | `cd dashboard; npm run dev -- --port 5173 --host` |
 
 Health checks:
@@ -144,7 +144,8 @@ Expected: latest rows show `identMethod='FACE'` and a real `identConfidence`.
 
 | Symptom | Fix |
 |---|---|
-| `[MQTT] ... Connection refused` | Start the LAN broker: `mosquitto -c C:\ProgramData\saferide-mosquitto\mosquitto.lan.conf`; check `netstat -ano \| findstr :1883` |
+| `[MQTT] ... Connection refused` | Start the LAN broker: `mosquitto -c C:\ProgramData\saferide-mosquitto\mosquitto.lan.conf`; check `netstat -ano \| findstr :1883` shows `0.0.0.0:1883` LISTENING |
+| Phone MQTT works but backend shows no events | Backend must subscribe on the LAN broker (`192.168.1.90:1883`), NOT the loopback-only Windows service broker (127.0.0.1:1883). Restart via `ops\start-backend-native.bat` after any broker change |
 | Backend `/health` fails | Run `ops\start-backend-native.bat`; check `native-backend.log`; verify Postgres service running |
 | Identify returns `studentId=null` for a known student | Re-enroll the student (§5); check face-service log; verify `face_landmarker.task` exists in `face-service/models/` |
 | Dashboard 401 | Login again — token expires after 8h |
