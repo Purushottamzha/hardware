@@ -2,7 +2,8 @@
 
 **Date:** 2026-08-08
 **Stack:** Native Windows (PostgreSQL 17 service, Mosquitto broker, Node.js 22, Python 3.13 venv) — no Docker required.
-**Live demo path:** Android phone → `POST /identify` → Face Token → MQTT → Mosquitto → NestJS → PostgreSQL → Dashboard Live Feed.
+**Live demo path:** Android phone (192.168.1.79) → `POST /identify` → Face Token → MQTT → Mosquitto → NestJS → PostgreSQL → Dashboard Live Feed.
+**Laptop:** 192.168.1.90 — **Phone:** 192.168.1.79 — same LAN 192.168.1.0/24.
 
 ---
 
@@ -39,8 +40,16 @@
 | MQTT broker LAN | `192.168.1.90:1883` plain, `8883` TLS |
 | MQTT user (backend) | `backend` / see `backend/.env` (`MOSQUITTO_PASSWORD`) |
 | Device (SIM) | `bus-ba2kha4521-door-SIM` (secret in `simulator/config.json`) |
-| Device (PHONE) | `bus-ba2kha4521-door-PHONE` |
+| Device (PHONE) | `bus-ba2kha4521-door-PHONE` — the REAL phone device (counter 36 after phone testing) |
 | Enrolled demo student | Sabina Thapa (`cmrnelmsu000bo3g47weaqvis`) — real face enrolled |
+
+> Thresholds: face-service scores are cosine similarity (best reference match); the gate is
+> **client-side** — the phone applies 0.70, the simulator defaults to 0.60 (`faceMatchThreshold`).
+> Real matches score ≈ 1.0, well above both. **Do not lower the phone's 0.70.**
+
+> `/identify` and `/face/identify` also return the non-sensitive fields `studentName`,
+> `class`, `busId`, `routeName` when a student matches (added 2026-08-08, fail-safe: on any
+> DB error the response still returns `studentId` + `confidence` only).
 
 > Never print or commit these secrets. `backend/.env`, `simulator/config.json`, `mosquitto/certs/`, `*.log`, `backend/uploads/` are gitignored.
 
@@ -85,11 +94,11 @@ simulator\venv\Scripts\python.exe simulator\simulate_tap.py --face-photo backend
 This runs the **exact phone protocol**: `/face/identify` → face token → MQTT publish
 (signed, QoS 1). A successful run prints `[OK] Published to saferide/hardware/.../attendance`.
 
-### Verified result (2026-08-08 07:40 NPT)
-- Identify → `studentId=cmrnelmsu000bo3g47weaqvis, confidence=1.000`
-- AttendanceEvent id 5: `BOARDED, verified=true, flagged=false, identMethod=FACE, identConfidence=0.9999999999999999, counter=18`
+### Verified result (2026-08-08 09:39 +05:45 — final run with the exact phone config 192.168.1.90:3000 / :1883)
+- Identify → `studentId=cmrnelmsu000bo3g47weaqvis, confidence=1.000, studentName="Sabina Thapa", class="Grade 6 A", busId="bus-01", routeName=…`
+- AttendanceEvent id 7: `BOARDED, verified=true, flagged=false, identMethod=FACE, identConfidence=0.9999999999999999, counter=26`
 - Student state: `NOT_BOARDED → BOARDED`
-- Devices: `bus-ba2kha4521-door-SIM lastSeenCounter=18`
+- Devices: `bus-ba2kha4521-door-SIM lastSeenCounter=26`, `bus-ba-…-PHONE lastSeenCounter=36` (locked by real phone tests)
 
 ## 7. Unknown / invalid face (security check)
 
@@ -100,22 +109,33 @@ Verified 2026-08-08.
 ## 8. `/identify` alias route
 
 `POST /identify` is an alias of `POST /face/identify` (same device auth + multipart photo).
-Both return `{studentId, confidence, processingTime}`. Verified on 2026-08-08 with the
+Both return `{studentId, confidence, processingTime}` and, on match, the non-sensitive
+`studentName`, `class`, `busId`, `routeName`. Verified on 2026-08-08 with the
 real Sabina photo (confidence 1.0) and a blank photo (studentId null).
 
 ## 9. Phone (Android) demo steps — to run on the phone by the operator
 
-1. Ensure phone is on the same Wi-Fi as this laptop (`192.168.1.90`).
-2. Run `termux_face_tap.py` on the phone (config in `phone-package/` → copy to
-   `config.json`, edit `apiBaseUrl` to `http://192.168.1.90:3000`, broker `192.168.1.90:8883`
-   TLS or `:1883` plain).
+1. Phone must be on the same Wi-Fi (`192.168.1.0/24`); laptop at `192.168.1.90`, phone at `192.168.1.79`.
+2. On the phone (Termux in `~/saferide`):
+   ```bash
+   python phone_face_tap.py --check    # Backend ✓ Face ✓ MQTT ✓ Camera ✓ Config ✓
+   python phone_face_tap.py --watch    # real face scan
+   ```
+   Config on the phone points at `http://192.168.1.90:3000` and broker `192.168.1.90:1883`
+   (plain; TLS mode is `192.168.1.90:8883` with the repo CA).
 3. The phone: captures photo → `/identify` → mints face token → publishes MQTT → offline
    buffer if unreachable.
 4. Watch the dashboard Live Feed update with **Method = FACE** and the confidence value.
 
-> The phone build was validated previously against this laptop; if the phone cannot reach
-> the laptop, verify: laptop firewall allows inbound 3000/1883/8883/5173 (Node/Mosquitto
-> rules may need admin approval), phone and laptop on same subnet, correct IP in config.
+> The phone's identify+token path has already produced 32 real mints
+> (`bus-ba2kha4521-door-PHONE lastSeenCounter = 36`). If the phone ever gets a
+> "counter too old" rejection, its local `counter` in the phone config must exceed 36
+> (simulator bundle on the laptop is pre-set past the laptop's last counter — do not mix the two).
+>
+> If the phone cannot reach the laptop: (a) check laptop Wi-Fi profile is **Private**
+> (Settings → Network & Internet → Wi-Fi → `salmanalam_5` → Private) — Public blocks inbound;
+> (b) confirm working `http://192.168.1.90:3000/health` in a laptop browser; (c) verify
+> firewall allow rules for Node.js / Mosquitto / python (they exist on this laptop).
 
 ## 10. Dashboard verification
 
@@ -149,17 +169,18 @@ Expected: latest rows show `identMethod='FACE'` and a real `identConfidence`.
 | Backend `/health` fails | Run `ops\start-backend-native.bat`; check `native-backend.log`; verify Postgres service running |
 | Identify returns `studentId=null` for a known student | Re-enroll the student (§5); check face-service log; verify `face_landmarker.task` exists in `face-service/models/` |
 | Dashboard 401 | Login again — token expires after 8h |
-| Phone can't reach laptop | Firewall inbound rules for 3000/1883/8883/5173; same LAN; correct IP |
+| Phone can't reach laptop | (1) make Wi-Fi profile Private (Settings → Wi-Fi → salmanalam_5), (2) `ping 192.168.1.90` from Termux, (3) firewall allow rules for 3000/1883/5183 are present
 | Broker lost after reboot | The LAN broker is a separate process — restart it (§13, row 1). It uses `C:\ProgramData\saferide-mosquitto\` config so no admin rights are needed |
 
-## 14. Current running state (2026-08-08 07:45 NPT)
+## 14. Current running state (2026-08-08 FINAL freeze check)
 
-- PostgreSQL: running (service)
-- Mosquitto LAN broker: running (0.0.0.0:1883, 0.0.0.0:8883)
-- Face service: running on 127.0.0.1:5001
-- Backend: running on 0.0.0.0:3000
-- Dashboard: running on 0.0.0.0:5173
-- Enrolled: 1 real student (Sabina Thapa), 1 real attendance event (BOARDED, FACE, verified)
+- PostgreSQL: running (service, port 5432)
+- Mosquitto LAN broker: running (0.0.0.0:1883 plain + 0.0.0.0:8883 TLS)
+- Face service: running on 127.0.0.1:5001 (health OK)
+- Backend: running on 0.0.0.0:3000 (health OK; MQTT connected to LAN broker)
+- Dashboard: running on 0.0.0.0:5173 (HTTP 200)
+- Phone: 192.168.1.79 reachable (ping OK); PHONE device lastSeenCounter 36 (real phone mints working)
+- Enrolled: 1 real student (Sabina Thapa), latest real attendance event id 7 (BOARDED, FACE, verified, confidence ≈ 1.0)
 
 ## 15. Post-demo cleanup
 
