@@ -158,7 +158,19 @@ export class AttendanceService implements OnModuleInit {
       return { accepted: false, reason: 'INVALID_DEVICE_SIGNATURE' };
     }
 
-    if (payload.counter <= device.lastSeenCounter) {
+    const existingEvent = await this.prisma.attendanceEvent.findFirst({
+      where: { deviceId: device.id, deviceCounter: payload.counter },
+    });
+
+    // A message is a replay only when:
+    //   a) its counter is strictly older than the last seen one, or
+    //   b) an attendance event for this (device, counter) already exists.
+    // A counter equal to lastSeenCounter is NOT a replay: the face-token mint
+    // advances lastSeenCounter to the same counter the phone reuses for the
+    // follow-up MQTT publish (see StudentsController.faceToken). HMAC + the
+    // (deviceId, deviceCounter) unique index still protect against tampering
+    // and duplicate recording.
+    if (payload.counter < device.lastSeenCounter || existingEvent) {
       await this.logSecurityEvent('REPLAY_SUSPECTED', payload.deviceId, rawPayload);
       return { accepted: false, reason: 'REPLAY_SUSPECTED' };
     }
