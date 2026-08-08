@@ -77,13 +77,21 @@ Health checks:
 ## 5. Enroll a student's face
 
 1. Open dashboard → **Students**.
-2. Click the **Face** button on a student row → choose a clear JPEG/PNG photo.
-3. Response shows `faceEnrolled: true`; the face-service enrollment store gains a reference
-   and `backend/uploads/photos/faces/` gets the new photo.
+2. Click **Manage Face** (or **Enroll Face**) on a student row.
+3. The dialog shows: `Face Status`, the **stored reference photo** when enrolled
+   (loaded from `GET /students/:id/face-photo`, admin JWT only), a **Choose/Replace Photo…**
+   button with an immediate local preview, **Upload & Enroll / Save & Enroll**, and
+   **Remove Enrollment** (with confirm).
+4. Only JPG/PNG up to 5 MB are accepted (client + server validated; duplicate
+   submission is blocked while uploading).
+5. On success: `faceEnrolled: true`, the reference photo is saved to
+   `backend/uploads/photos/faces/` and **remains viewable** in the dialog — no
+   re-upload needed to see it. Removing enrollment also deletes the stored photo file.
 
 Verified on 2026-08-08: re-enrollment of Sabina Thapa returned
 `{"studentId":"...","faceEnrolled":true,"photoPath":"faces\\2212c326-....jpg"}`
-(referenceCount 1 → 2).
+(referenceCount 1 → 2); `GET /students/:id/face-photo` streams the stored JPEG
+(200 image/jpeg), 401/404 without a valid enrolled student, and resists path-traversal.
 
 ## 6. Simulated phone tap (laptop-side E2E)
 

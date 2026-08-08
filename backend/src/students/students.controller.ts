@@ -8,6 +8,7 @@ import {
   Param,
   Query,
   Req,
+  Res,
   UseGuards,
   UseInterceptors,
   UploadedFile,
@@ -18,9 +19,10 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { IsString, IsOptional, IsNumber } from 'class-validator';
-import { join } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import { mkdirSync, promises as fs } from 'node:fs';
 import * as crypto from 'node:crypto';
+import type { Response } from 'express';
 import { StudentsService } from './students.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FaceService } from '../face/face.service';
@@ -182,6 +184,26 @@ export class StudentsController {
     );
   }
 
+  @Get(':id/face-photo')
+  async getFacePhoto(@Param('id') id: string, @Res() res: Response) {
+    const emb = await this.prisma.faceEmbedding.findUnique({ where: { studentId: id } });
+    if (!emb?.photoPath) throw new NotFoundException('No face enrollment for this student');
+
+    const root = resolve(this.uploadDir);
+    const fullPath = resolve(this.uploadDir, emb.photoPath);
+    if (!fullPath.startsWith(root + sep)) {
+      throw new NotFoundException('Invalid reference photo path');
+    }
+    try {
+      await fs.access(fullPath);
+    } catch {
+      throw new NotFoundException('Reference photo file missing');
+    }
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.sendFile(fullPath);
+  }
+
   @Post(':id/enroll-face')
   @UseInterceptors(
     FileInterceptor('photo', {
@@ -208,8 +230,16 @@ export class StudentsController {
 
   @Delete(':id/enroll-face')
   async removeFaceEnrollment(@Param('id') id: string) {
+    const emb = await this.prisma.faceEmbedding.findUnique({ where: { studentId: id } });
     await this.faceService.deleteStudent(id);
     await this.studentsService.removeFaceEnrollment(id);
+    if (emb?.photoPath) {
+      try {
+        await fs.unlink(join(this.uploadDir, emb.photoPath));
+      } catch {
+        // best effort — keep enrollment removal even if the file is already gone
+      }
+    }
     return { studentId: id, faceEnrolled: false };
   }
 

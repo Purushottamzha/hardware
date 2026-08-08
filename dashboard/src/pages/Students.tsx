@@ -238,12 +238,46 @@ export function Students() {
   const [mPreview, setMPreview] = useState<string | null>(null);
   const [mBusy, setMBusy] = useState(false);
   const [mMsg, setMMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [mPhoto, setMPhoto] = useState<string | null>(null);
+  const [mPhotoLoading, setMPhotoLoading] = useState(false);
+  const storedUrlRef = useRef<string | null>(null);
   const faceInputRef = useRef<HTMLInputElement>(null);
+
+  const loadStoredPhoto = useCallback(async (id: string) => {
+    setMPhotoLoading(true);
+    try {
+      const res = await apiFetch(`/students/${id}/face-photo`);
+      if (res.ok) {
+        const url = URL.createObjectURL(await res.blob());
+        if (storedUrlRef.current) URL.revokeObjectURL(storedUrlRef.current);
+        storedUrlRef.current = url;
+        setMPhoto(url);
+      } else {
+        if (storedUrlRef.current) URL.revokeObjectURL(storedUrlRef.current);
+        storedUrlRef.current = null;
+        setMPhoto(null);
+      }
+    } catch {
+      if (storedUrlRef.current) URL.revokeObjectURL(storedUrlRef.current);
+      storedUrlRef.current = null;
+      setMPhoto(null);
+    } finally {
+      setMPhotoLoading(false);
+    }
+  }, []);
 
   const chooseFaceFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
+    if (!/^image\/(jpeg|png)$/.test(file.type)) {
+      setMMsg({ ok: false, text: 'Only JPG or PNG images are allowed.' });
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setMMsg({ ok: false, text: 'Photo must be 5 MB or smaller.' });
+      return;
+    }
     setMFile(file);
     setMMsg(null);
     if (mPreview) URL.revokeObjectURL(mPreview);
@@ -256,6 +290,9 @@ export function Students() {
     setMFile(null);
     if (mPreview) URL.revokeObjectURL(mPreview);
     setMPreview(null);
+    if (storedUrlRef.current) URL.revokeObjectURL(storedUrlRef.current);
+    storedUrlRef.current = null;
+    setMPhoto(null);
     setMMsg(null);
     load();
   };
@@ -272,6 +309,10 @@ export function Students() {
       if (res.ok) {
         setMMsg({ ok: true, text: `✓ FACE ENROLLMENT SUCCESSFUL — ${manage.name} can now be recognized.` });
         setManage((prev) => (prev ? { ...prev, faceEnrolled: true } : prev));
+        if (mPreview) URL.revokeObjectURL(mPreview);
+        setMPreview(null);
+        setMFile(null);
+        loadStoredPhoto(manage.id);
         load();
       } else {
         setMMsg({ ok: false, text: (data as any).message || `Enrollment failed (${res.status})` });
@@ -293,6 +334,9 @@ export function Students() {
       if (res.ok) {
         setMMsg({ ok: true, text: `✓ FACE ENROLLMENT REMOVED — ${manage.name} is no longer recognized.` });
         setManage((prev) => (prev ? { ...prev, faceEnrolled: false } : prev));
+        if (storedUrlRef.current) URL.revokeObjectURL(storedUrlRef.current);
+        storedUrlRef.current = null;
+        setMPhoto(null);
         load();
       } else {
         const data = await res.json().catch(() => ({}));
@@ -442,7 +486,7 @@ export function Students() {
                         <div className="flex items-center gap-2">
                           <button onClick={() => { setEditing(s); setShowAdd(false); }}
                             className="px-2.5 py-1 rounded-md text-xs bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-white/40 hover:text-white/60 transition-all">Edit</button>
-                          <button onClick={() => setManage(s)}
+                          <button onClick={() => { setManage(s); if (s.faceEnrolled) loadStoredPhoto(s.id); }}
                             className={`px-2.5 py-1 rounded-md text-xs border transition-all ${
                               s.faceEnrolled
                                 ? 'bg-teal-400/20 border-teal-400/30 text-teal-400 hover:bg-teal-400/30'
@@ -486,15 +530,26 @@ export function Students() {
 
               <div className="flex flex-col items-center gap-3">
                 {mPreview ? (
-                  <img src={mPreview} alt="Face preview" className="w-32 h-32 object-cover rounded-xl border border-white/[0.08]" />
+                  <img src={mPreview} alt="Face preview" className="w-32 h-32 object-cover rounded-xl border border-teal-400/30" />
+                ) : mPhoto ? (
+                  <img src={mPhoto} alt="Stored reference photo" className="w-32 h-32 object-cover rounded-xl border border-white/[0.08]" />
                 ) : (
                   <div className="w-32 h-32 rounded-xl border border-dashed border-white/[0.15] flex items-center justify-center text-white/20">
                     <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></svg>
                   </div>
                 )}
+                <span className="text-[10px] text-white/30">
+                  {mPreview
+                    ? `New photo — ${mFile?.name} (${mFile ? (mFile.size / 1024 / 1024).toFixed(1) : 0} MB)`
+                    : mPhoto
+                      ? 'Stored reference photo — used for recognition'
+                      : mPhotoLoading
+                        ? 'Loading reference photo…'
+                        : 'No reference photo yet'}
+                </span>
                 <button onClick={() => faceInputRef.current?.click()} disabled={mBusy}
                   className="px-3 py-1.5 rounded-lg text-xs bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-white/60 transition-all disabled:opacity-50">
-                  {mFile ? 'Change Photo…' : 'Choose Photo…'}
+                  {mFile ? 'Change Photo…' : mPhoto ? 'Replace Photo…' : 'Choose Photo…'}
                 </button>
                 <input ref={faceInputRef} type="file" accept="image/jpeg,image/png" className="hidden" onChange={chooseFaceFile} />
               </div>
