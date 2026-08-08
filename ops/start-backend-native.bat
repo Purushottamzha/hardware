@@ -1,22 +1,18 @@
 @echo off
-REM SafeRide native backend launcher (plain MQTT 1883 + native face-service on 5001)
+REM ===========================================================================
+REM SafeRide Nepal — native backend launcher (plain MQTT 1883 + native face-service on 5001)
+REM
+REM Secrets are NOT stored in this file. They live in ops\native.env (gitignored).
+REM Copy ops\native.env.example -> ops\native.env and fill real values.
+REM ===========================================================================
 cd /d "%~dp0.."
-set DATABASE_URL=postgresql://saferide:saferide_pass@localhost:5432/saferide
-set ENCRYPTION_KEY=23e8ce271aa672427bccf42d273ebe03ee29343449250d5a2368b358f052e8db
-set JWT_SECRET=0fb14d45adc38612bdc8301d383f9a85bd2e77d05fcf0c635b6acf51497b0432
-set JWT_EXPIRY=8h
-set ADMIN_PHONE=977-9800000000
-set ADMIN_PASSWORD=75a7c51f9871e5da816107b38bc71a21
-set MOSQUITTO_HOST=192.168.1.90
-set MOSQUITTO_PORT=1883
-set MOSQUITTO_USERNAME=backend
-set MOSQUITTO_PASSWORD=f59acc7d9dc6907ee9ce39e4a9dbebdf
-set MQTT_TLS_REJECT_UNAUTHORIZED=false
-set STUDENT_TOKEN_SECRET=e2ee4c21298da8872caa93698bcac23352b9f0507f18324954b73e3d19fcc374
-set DASHBOARD_ORIGIN=http://localhost:5173,http://192.168.1.90:5173
-set PHOTO_UPLOAD_DIR=./uploads/photos
-set FACE_SERVICE_URL=http://127.0.0.1:5001
-set FACE_MATCH_THRESHOLD=0.60
-set NODE_ENV=development
+
+if not exist "%~dp0native.env" (
+  echo [ERROR] ops\native.env not found. Copy ops\native.env.example to ops\native.env and fill real values.
+  exit /b 1
+)
+
+for /f "usebackq tokens=1,* delims==" %%a in ("%~dp0..\ops\native.env") do set "%%a=%%b"
+
 cd backend
 node dist\main

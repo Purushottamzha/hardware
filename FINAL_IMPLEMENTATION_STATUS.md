@@ -98,9 +98,13 @@ Android device in the operator's hands).
 
 ## 11. QR CODE REMOVAL — VERIFIED (statics + runtime grep)
 - No matches for `qr/qrcode`/`generate_student_qr` in `backend/src`, `dashboard/src`, `simulator/`.
-- QR-era artifacts already removed: `simulator/generate_student_qr.py`, `simulator/continuous_scan.py`,
-  `simulator/termux_tap.py`, `simulator/termux_config.example.json`, `phone-package/qr_student.png`.
-- Phone package now face-based (`simulate_tap.py` + `offline_buffer.py`), QR-only files deleted from working tree (deleted in git, `phone-package/` gitignored).
+- QR-era artifacts removed from the repository:
+  `firmware/` (legacy ESP32-CAM sketch with QR decode + its README), `simulator/generate_student_qr.py`,
+  `simulator/continuous_scan.py`, `simulator/termux_tap.py`, `simulator/termux_config.example.json`,
+  `phone-package/qr_student.png`.
+- Phone package now face-based (`simulate_tap.py` + `offline_buffer.py`), QR-only files deleted (gitignored).
+- Historical QR references that remain on purpose: `ops/RUN_LOG.md` (dated ops log) and the removal
+  notes above/`DEMO.md`. No executable QR path exists.
 
 ## 12. SECURITY — VERIFIED (no secrets in repo)
 - gitignored: `.env*`, `config.json`, `mosquitto/certs/`, `*.crt/key/pem`, `backend/uploads/`, `phone-package/`, `*.log`, `face-service/enrollments.json`.

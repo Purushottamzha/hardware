@@ -18,7 +18,9 @@ Counter state persists in state.json (gitignored).
 
 import base64
 import json
+import ssl
 import sys
+import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -206,9 +208,31 @@ class ScannerHandler(BaseHTTPRequestHandler):
 
 
 def main():
-    server = ThreadingHTTPServer(("0.0.0.0", PORT), ScannerHandler)
-    print(f"SafeRide scanner bridge on http://0.0.0.0:{PORT} (student UI: /scanner)")
-    server.serve_forever()
+    # Plain HTTP fallback: usable even without TLS (chrome://flags workaround not needed).
+    http_server = ThreadingHTTPServer(("0.0.0.0", PORT), ScannerHandler)
+    print(f"SafeRide scanner bridge HTTP : http://0.0.0.0:{PORT}/scanner")
+
+    # HTTPS: a secure context so the phone's camera (getUserMedia) works after a
+    # single "Proceed anyway" certificate warning — no chrome://flags needed.
+    cert = ROOT / "certs" / "server.crt"
+    key = ROOT / "certs" / "server.key"
+    tls_port = 8443
+    if not (cert.exists() and key.exists()):
+        print("WARNING: no TLS certs in scanner-bridge/certs/ — skipping HTTPS (phone camera may be blocked)")
+    else:
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.load_cert_chain(certfile=str(cert), keyfile=str(key))
+        try:
+            https_server = ThreadingHTTPServer(("0.0.0.0", tls_port), ScannerHandler)
+            https_server.socket = ctx.wrap_socket(https_server.socket, server_side=True)
+        except OSError as e:
+            print(f"WARNING: could not bind HTTPS :{tls_port} — {e}")
+            https_server = None
+        if https_server:
+            print(f"SafeRide scanner bridge HTTPS: https://0.0.0.0:{tls_port}/scanner (self-signed)")
+            threading.Thread(target=https_server.serve_forever, daemon=True).start()
+
+    http_server.serve_forever()
 
 
 if __name__ == "__main__":

@@ -4,17 +4,28 @@ REM SafeRide Nepal — NATIVE STACK startup (no Docker, no WSL)
 REM
 REM Requires (already installed on this machine):
 REM   - PostgreSQL 17 service ("postgresql-x64-17")
-REM   - Mosquitto Windows service (listens on 1883, plain)
+REM   - Mosquitto LAN broker on 0.0.0.0:1883 + 0.0.0.0:8883 (see FINAL_DEMO_RUNBOOK §3)
 REM   - Node 22 + backend deps (backend/node_modules)
 REM   - Python 3.13 venv (face-service/native-venv)
 REM
+REM Secrets are NOT stored in this file. They live in ops\native.env (gitignored).
+REM Copy ops\native.env.example -> ops\native.env and fill real values.
+REM
 REM Step 1: start the native face-matching service (port 5001)
-REM Step 2: start the NestJS backend (port 3000) pointed at native Postgres
-REM         + native Mosquitto (plain 1883, the ngrok branch)
+REM Step 2: start the scanner bridge (port 8100, student-facing web scanner UI)
+REM Step 3: start the NestJS backend (port 3000) pointed at native Postgres
+REM         + the LAN Mosquitto broker (plain 1883)
 REM ===========================================================================
 
 setlocal
 cd /d "%~dp0.."
+
+if not exist "%~dp0native.env" (
+  echo [ERROR] ops\native.env not found. Copy ops\native.env.example to ops\native.env and fill real values.
+  exit /b 1
+)
+
+for /f "usebackq tokens=1,* delims==" %%a in ("%~dp0native.env") do set "%%a=%%b"
 
 echo [1/3] Starting face-service on 127.0.0.1:5001 ...
 start "saferide-face-service" /min cmd /c "face-service\run_native.bat"
@@ -22,25 +33,7 @@ start "saferide-face-service" /min cmd /c "face-service\run_native.bat"
 echo [2/3] Starting scanner bridge on 0.0.0.0:8100 ...
 start "saferide-scanner-bridge" /min cmd /c "scanner-bridge\run_bridge.bat"
 
-echo [3/3] Starting backend on :3000 (native Postgres + plain MQTT 1883) ...
-set DATABASE_URL=postgresql://saferide:saferide_pass@localhost:5432/saferide
-set ENCRYPTION_KEY=23e8ce271aa672427bccf42d273ebe03ee29343449250d5a2368b358f052e8db
-set JWT_SECRET=0fb14d45adc38612bdc8301d383f9a85bd2e77d05fcf0c635b6acf51497b0432
-set JWT_EXPIRY=8h
-set ADMIN_PHONE=977-9800000000
-set ADMIN_PASSWORD=75a7c51f9871e5da816107b38bc71a21
-set MOSQUITTO_HOST=192.168.1.90
-set MOSQUITTO_PORT=1883
-set MOSQUITTO_USERNAME=backend
-set MOSQUITTO_PASSWORD=f59acc7d9dc6907ee9ce39e4a9dbebdf
-set MQTT_TLS_REJECT_UNAUTHORIZED=false
-set STUDENT_TOKEN_SECRET=e2ee4c21298da8872caa93698bcac23352b9f0507f18324954b73e3d19fcc374
-set DASHBOARD_ORIGIN=http://localhost:5173,http://192.168.1.90:5173
-set PHOTO_UPLOAD_DIR=./uploads/photos
-set FACE_SERVICE_URL=http://127.0.0.1:5001
-set FACE_MATCH_THRESHOLD=0.60
-set NODE_ENV=development
-
+echo [3/3] Starting backend on :3000 (native Postgres + LAN MQTT 1883) ...
 cd backend
 node dist\main
 

@@ -235,7 +235,9 @@ Expected: latest rows show `identMethod='FACE'` and a real `identConfidence`.
 ## 15. Post-demo cleanup
 
 - `git status` — expect only intended files.
-- Logs (`*.log`), uploads, `.env`, `simulator/config.json`, `mosquitto/certs/` are gitignored.
+- Logs (`*.log`), uploads, `.env`, `ops/native.env`, `simulator/config.json`, `mosquitto/certs/` are gitignored.
+- The native launchers (`ops\start-backend-native.bat`, `ops\start-native-stack.bat`) contain **no secrets** —
+  they load them from `ops\native.env` (gitignored; template `ops\native.env.example`).
 - Reset demo state if needed:
   `UPDATE "Student" SET "currentState"='NOT_BOARDED' WHERE id='cmrnelmsu000bo3g47weaqvis';`
 

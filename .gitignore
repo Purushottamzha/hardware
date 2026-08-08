@@ -10,6 +10,7 @@ mosquitto/certs/
 config.json
 secrets.h
 secrets/
+ops/native.env
 
 # Node
 node_modules/
@@ -56,3 +57,6 @@ scanner-bridge/state.json
 # OS
 .DS_Store
 Thumbs.db
+
+# Scanner-bridge TLS certs (self-signed, machine-specific)
+scanner-bridge/certs/
