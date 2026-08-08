@@ -24,140 +24,6 @@ interface Student {
   bus?: BusInfo | null;
 }
 
-interface TokenData {
-  token: string;
-  qrData: string;
-}
-
-function QRCard({ student, tokenData, onClose }: { student: Student; tokenData: TokenData; onClose?: () => void }) {
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(tokenData.qrData)}`;
-
-  const print = () => {
-    const printWin = window.open('', '_blank');
-    if (!printWin) return;
-    printWin.document.write(`<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<title>QR — ${student.name}</title>
-<style>
-  @page { margin: 0; size: auto; }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    display: flex; justify-content: center; align-items: center;
-    min-height: 100vh; font-family: system-ui, sans-serif;
-  }
-  .card {
-    text-align: center; padding: 20px;
-  }
-  img { width: 350px; height: 350px; display: block; margin: 0 auto 16px; }
-  .name { font-size: 20px; font-weight: 700; color: #111; margin-bottom: 4px; }
-  .class { font-size: 14px; color: #555; }
-  @media print {
-    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  }
-</style>
-</head>
-<body>
-<div class="card">
-  <img src="${qrUrl}" alt="QR code for ${student.name}" />
-  <div class="name">${student.name}</div>
-  <div class="class">${student.class || ''}</div>
-</div>
-</body>
-</html>`);
-    printWin.document.close();
-    printWin.focus();
-    setTimeout(() => printWin.print(), 500);
-  };
-
-  return (
-    <div>
-      <div className="space-y-4">
-        <div className="flex justify-center">
-          <img src={qrUrl} alt={`QR code for ${student.name}`}
-            className="rounded-xl border border-white/10" width="280" height="280"
-            style={{ imageRendering: 'pixelated' }} />
-        </div>
-        <div className="text-center space-y-1">
-          <p className="text-sm font-semibold text-white/90">{student.name}</p>
-          {student.class && <p className="text-xs text-white/50">{student.class}</p>}
-        </div>
-        <div className="bg-black/30 rounded-lg p-3">
-          <p className="text-xs text-white/30 mb-1 uppercase tracking-wider">Token</p>
-          <code className="text-xs font-mono text-teal-400 break-all leading-relaxed">{tokenData.token.slice(0, 60)}…</code>
-        </div>
-        <div className="flex gap-2">
-          <button onClick={print}
-            className="flex-1 py-2.5 rounded-lg text-xs bg-teal-400/10 hover:bg-teal-400/20 border border-teal-400/30 text-teal-400 font-medium transition-all"
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="inline mr-1.5">
-              <polyline points="6 9 6 2 18 2 18 9" /><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><rect x="6" y="14" width="12" height="8" />
-            </svg>
-            Print
-          </button>
-          {onClose && (
-            <button onClick={onClose}
-              className="flex-1 py-2.5 rounded-lg text-xs bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-white/50 transition-all"
-            >
-              Close
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function QRModal({ student, tokenData, onReissue, onClose }: {
-  student: Student;
-  tokenData: TokenData;
-  onReissue: () => Promise<TokenData>;
-  onClose: () => void;
-}) {
-  const [current, setCurrent] = useState<TokenData>(tokenData);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-
-  const handleRegenerate = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const data = await onReissue();
-      setCurrent(data);
-    } catch {
-      setError('Failed to regenerate token');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-surface-card border border-white/[0.08] rounded-2xl p-6 max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-semibold text-white/90">{student.name} — QR</h3>
-          <button onClick={onClose} className="text-white/30 hover:text-white/60 transition-colors">✕</button>
-        </div>
-        {error ? (
-          <div className="text-xs text-red-400 text-center py-4">{error}</div>
-        ) : (
-          <div className="space-y-4">
-            <QRCard student={student} tokenData={current} />
-            <div className="pt-1">
-              <button onClick={handleRegenerate} disabled={loading}
-                className="w-full py-2 rounded-lg text-xs bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-white/40 hover:text-white/60 transition-all disabled:opacity-50"
-              >
-                {loading ? 'Regenerating…' : 'Regenerate (invalidates old token)'}
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 function StudentForm({ student, onSave, onCancel }: {
   student?: Student;
   onSave: (data: any) => void;
@@ -366,8 +232,6 @@ export function Students() {
   const [query, setQuery] = useState('');
   const [showAdd, setShowAdd] = useState(false);
   const [editing, setEditing] = useState<Student | null>(null);
-  const [qrStudent, setQrStudent] = useState<Student | null>(null);
-  const [tokens, setTokens] = useState<Map<string, TokenData>>(new Map());
   const [enrollId, setEnrollId] = useState<string | null>(null);
   const [enrollment, setEnrollment] = useState<Record<string, string>>({});
 
@@ -408,16 +272,8 @@ export function Students() {
 
   useEffect(() => { load(); }, [load]);
 
-  const generateToken = useCallback(async (studentId: string): Promise<TokenData> => {
-    const data = await apiPost<{ token: string; qrData: string }>(`/students/${studentId}/token`);
-    const td: TokenData = { token: data.token, qrData: data.qrData };
-    setTokens((prev) => { const m = new Map(prev); m.set(studentId, td); return m; });
-    return td;
-  }, []);
-
   const handleAdd = async (payload: any) => {
-    const created = await apiPost<Student>('/students', payload);
-    await generateToken(created.id);
+    await apiPost<Student>('/students', payload);
     setShowAdd(false);
     load();
   };
@@ -429,66 +285,6 @@ export function Students() {
     load();
   };
 
-  const handleReissue = useCallback(async (): Promise<TokenData> => {
-    if (!qrStudent) throw new Error('No student selected');
-    const data = await apiPost<{ token: string; qrData: string }>(`/students/${qrStudent.id}/reissue-qr`);
-    const td: TokenData = { token: data.token, qrData: data.qrData };
-    setTokens((prev) => { const m = new Map(prev); m.set(qrStudent.id, td); return m; });
-    return td;
-  }, [qrStudent]);
-
-  const handlePrintAll = () => {
-    const cards = students
-      .map((s) => {
-        const td = tokens.get(s.id);
-        if (!td) return '';
-        const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(td.qrData)}`;
-        return `<div class="card">
-          <img src="${qrUrl}" alt="QR for ${s.name}" />
-          <div class="name">${s.name}</div>
-          <div class="class">${s.class || ''}</div>
-        </div>`;
-      })
-      .filter(Boolean)
-      .join('');
-    if (!cards) return;
-    const printWin = window.open('', '_blank');
-    if (!printWin) return;
-    printWin.document.write(`<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<title>All Student QR Codes</title>
-<style>
-  @page { margin: 10mm; size: auto; }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: system-ui, sans-serif; padding: 10px; }
-  .grid { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
-  .card {
-    width: 200px; text-align: center; padding: 12px;
-    border: 1px solid #ddd; border-radius: 8px; page-break-inside: avoid;
-    break-inside: avoid;
-  }
-  .card img { width: 160px; height: 160px; display: block; margin: 0 auto 8px; }
-  .name { font-size: 13px; font-weight: 700; color: #111; }
-  .class { font-size: 11px; color: #555; }
-  @media print {
-    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    .grid { gap: 8px; }
-    .card { width: 180px; padding: 8px; border: 1px solid #ccc; }
-    .card img { width: 140px; height: 140px; }
-  }
-</style>
-</head>
-<body>
-<div class="grid">${cards}</div>
-</body>
-</html>`);
-    printWin.document.close();
-    printWin.focus();
-    setTimeout(() => printWin.print(), 500);
-  };
-
   const filtered = students.filter((s) => {
     const q = query.toLowerCase();
     return !q || s.name.toLowerCase().includes(q) || (s.class || '').toLowerCase().includes(q);
@@ -496,15 +292,6 @@ export function Students() {
 
   return (
     <div className="p-6 space-y-5">
-      {qrStudent && (
-        <QRModal
-          student={qrStudent}
-          tokenData={tokens.get(qrStudent.id)!}
-          onReissue={handleReissue}
-          onClose={() => setQrStudent(null)}
-        />
-      )}
-
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-teal-400/10 border border-teal-400/20 flex items-center justify-center">
@@ -519,13 +306,6 @@ export function Students() {
           </div>
         </div>
         <div className="flex gap-2">
-          <button onClick={handlePrintAll}
-            disabled={students.length === 0}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-white/50 hover:text-white/70 font-medium transition-all disabled:opacity-30"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9" /><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><rect x="6" y="14" width="12" height="8" /></svg>
-            Print All
-          </button>
           <button onClick={() => { setShowAdd(true); setEditing(null); }}
             className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm bg-teal-400/10 hover:bg-teal-400/20 border border-teal-400/30 text-teal-400 font-medium transition-all"
           >
@@ -573,13 +353,11 @@ export function Students() {
                   <th className="px-5 py-3 text-left font-medium">Ward / Tole</th>
                   <th className="px-5 py-3 text-left font-medium">Route Order</th>
                   <th className="px-5 py-3 text-left font-medium">Status</th>
-                  <th className="px-5 py-3 text-left font-medium">QR</th>
                   <th className="px-5 py-3 text-left font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((s) => {
-                  const hasToken = tokens.has(s.id);
                   return (
                     <tr key={s.id} className="border-t border-white/[0.04] hover:bg-white/[0.02] transition-colors">
                       <td className="px-5 py-3.5 font-medium text-white/90">{s.name}</td>
@@ -599,20 +377,7 @@ export function Students() {
                         </span>
                       </td>
                       <td className="px-5 py-3.5">
-                        {hasToken ? (
-                          <span className="text-xs text-teal-400">✓ Ready</span>
-                        ) : (
-                          <span className="text-xs text-white/20">—</span>
-                        )}
-                      </td>
-                      <td className="px-5 py-3.5">
                         <div className="flex items-center gap-2">
-                          <button onClick={async () => {
-                              if (!tokens.has(s.id)) await generateToken(s.id);
-                              setQrStudent(s);
-                            }}
-                            className="px-2.5 py-1 rounded-md text-xs bg-teal-400/10 hover:bg-teal-400/20 border border-teal-400/20 text-teal-400 transition-all"
-                            title="View QR code">QR</button>
                           <button onClick={() => { setEditing(s); setShowAdd(false); }}
                             className="px-2.5 py-1 rounded-md text-xs bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-white/40 hover:text-white/60 transition-all">Edit</button>
                           <span className="flex items-center gap-1">

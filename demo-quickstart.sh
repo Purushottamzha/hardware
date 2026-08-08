@@ -12,7 +12,7 @@
 #   6. Log in as admin, register a demo bus device, create a demo student
 #   7. Add MQTT broker credentials for that device
 #   8. Write simulator/config.json — fully pre-filled, ready to run
-#   9. Generate the demo student's QR code
+#   9. Create a demo student (faces are enrolled from the Dashboard)
 #
 # After this finishes, your ENTIRE re-run command for future demo days is:
 #   docker-compose up -d
@@ -176,30 +176,12 @@ if command -v pip3 >/dev/null 2>&1; then
     || warn "Could not auto-install simulator deps. Run manually: pip3 install -r simulator/requirements.txt"
 fi
 
-# --- 12. Generate the demo student's QR --------------------------------
-log "Generating QR code for ${DEMO_STUDENT_NAME}..."
-if python - "$API" "$STUDENT_ID" "$ADMIN_JWT" <<'PYEOF'
-import sys, json, urllib.request
-api, student_id, token = sys.argv[1], sys.argv[2], sys.argv[3]
-req = urllib.request.Request(f"{api}/students/{student_id}/token", method="POST",
-                              headers={"Authorization": f"Bearer {token}"})
-with urllib.request.urlopen(req) as r:
-    data = json.load(r)
-try:
-    import qrcode
-    qr = qrcode.QRCode(box_size=10, border=4)
-    qr.add_data(data["qrData"])
-    qr.make(fit=True)
-    qr.make_image(fill_color="black", back_color="white").save("simulator/qr_student.png")
-    print("QR_OK")
-except ImportError:
-    print("QR_SKIPPED_NO_QRCODE_LIB")
-PYEOF
-then
-  ok "QR saved to simulator/qr_student.png"
-else
-  warn "QR generation skipped — install qrcode: pip3 install qrcode[pil]"
-fi
+# --- 12. Remind to enroll the demo student's face -----------------------
+log "Demo student created. Enroll the face from the Dashboard:"
+echo ""
+echo "  Open  http://localhost:5173/students"
+echo "  Find '${DEMO_STUDENT_NAME}' → click the 'Face' button → upload a photo."
+echo ""
 
 # --- Summary -----------------------------------------------------------
 echo ""
@@ -214,19 +196,19 @@ echo "  Admin password:   ${ADMIN_PASSWORD}"
 echo "  Demo device:      ${DEMO_DEVICE_ID}  (bus: ${DEMO_BUS_ID})"
 echo "  Demo student:     ${DEMO_STUDENT_NAME}  (${STUDENT_ID})"
 echo ""
-echo "  Try a real tap right now (from this machine):"
-echo "    cd simulator && python3 simulate_tap.py --qr-file qr_student.png"
+echo "  Try a real face tap right now (from this machine):"
+echo "    cd simulator && python3 simulate_tap.py --face-photo <path-to-face-photo.jpg>"
 echo ""
 echo "  Try the attack demos:"
-echo "    python3 simulate_tap.py --qr-file qr_student.png --tamper   # INVALID_DEVICE_SIGNATURE"
+echo "    python3 simulate_tap.py --face-photo <photo.jpg> --tamper   # INVALID_DEVICE_SIGNATURE"
 echo "    python3 simulate_tap.py --replay                            # REPLAY_SUSPECTED"
 echo ""
 echo "  To move to your phone later:"
 echo "    1. Install Termux + Termux:API app on Android"
 echo "    2. Copy the simulator/ folder to the phone"
 echo "    3. pkg install python termux-api && pip install -r requirements.txt"
-echo "    4. Show qr_student.png on a second screen, run simulate_tap.py (no --qr-file needed"
-echo "       once termux-camera-photo can see the QR — or keep using --qr-file for reliability)"
+echo "    4. Enroll the student's face on the Dashboard, then run:"
+echo "       python simulate_tap.py"
 echo ""
 echo "  Next time, you only need:  ${DC} up -d"
 echo -e "${GREEN}=========================================================${NC}"

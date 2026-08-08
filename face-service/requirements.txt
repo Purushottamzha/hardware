@@ -1,5 +1,7 @@
-deepface>=0.0.89,<1.0
 fastapi>=0.110.0
 uvicorn>=0.29.0
 python-multipart>=0.0.9
 numpy>=1.26.0
+opencv-python>=4.9.0
+anyio>=4.3.0
+mediapipe==1.0.0

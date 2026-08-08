@@ -1,4 +1,10 @@
-# SafeRide ESP32-CAM Firmware (Phase 2)
+# SafeRide ESP32-CAM Firmware (Legacy — QR era)
+
+> **Status: LEGACY.** This ESP32-CAM sketch predates the face-recognition
+> pipeline and is NOT part of the current architecture. Attendance is now
+> face-based: an Android phone (Termux) captures the student's face and sends
+> it to the face-service for identification. Keep this sketch only as
+> reference; the phone is the supported demo device.
 
 ## Wiring
 
@@ -44,6 +50,5 @@ See `SECURITY.md` for the full threat model.
 
 - ESP32 Arduino Core 2.0.x+
 - PubSubClient (for MQTT)
-- quirc (for QR decoding — MIT, https://github.com/dlbeer/quirc)
 - TinyGPS++ (for GPS parsing)
 - ArduinoJson (for JSON construction)

@@ -47,7 +47,6 @@ model Student {
   homeRadiusM   Int      @default(150)
   routeOrder    Int?
   currentState  String   @default("NOT_BOARDED")
-  qrRevoked     Boolean  @default(false)
   tokenVersion  Int      @default(1)
   events        AttendanceEvent[]
   faceEmbedding FaceEmbedding?
@@ -71,7 +70,7 @@ model AttendanceEvent {
   flagReason      String?
   rejectionReason String?
   photoPath       String?
-  identMethod     String   @default("QR")
+  identMethod     String   @default("FACE")
   identConfidence Float?
   resolved        Boolean  @default(false)
   resolutionNote  String?

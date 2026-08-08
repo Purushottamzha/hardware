@@ -115,7 +115,7 @@ export class StudentsService {
     adminId?: number,
     identMethod?: string,
     identConfidence?: number,
-  ): Promise<{ token: string; qrData: string }> {
+  ): Promise<{ token: string }> {
     const student = await this.prisma.student.findUnique({ where: { id: studentId } });
     if (!student) throw new NotFoundException('Student not found');
 
@@ -134,21 +134,7 @@ export class StudentsService {
     const token = Buffer.from(JSON.stringify({ payload, hmac })).toString('base64');
 
     if (adminId) await this.auditService.log(adminId, 'GENERATE_TOKEN', studentId);
-    return { token, qrData: token };
-  }
-
-  async reissueQr(studentId: string, adminId?: number): Promise<{ token: string; qrData: string }> {
-    const student = await this.prisma.student.findUnique({ where: { id: studentId } });
-    if (!student) throw new NotFoundException('Student not found');
-
-    await this.prisma.student.update({
-      where: { id: studentId },
-      data: { qrRevoked: true, tokenVersion: { increment: 1 } },
-    });
-
-    if (adminId) await this.auditService.log(adminId, 'REISSUE_QR', studentId);
-
-    return this.generateToken(studentId, adminId);
+    return { token };
   }
 
   async verifyToken(tokenBase64: string): Promise<{

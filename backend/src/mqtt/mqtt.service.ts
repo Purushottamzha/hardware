@@ -27,12 +27,16 @@ export class MqttService implements OnModuleInit {
       clientId: `backend-${Date.now()}`,
     };
 
-    if (rejectUnauthorized) {
+    // Scheme branch: port 8883 => TLS (local CA), anything else => plain MQTT.
+    // Mirrors the simulator's rule in simulate_tap.py. The ngrok demo exposes
+    // PLAIN 1883, so the backend connects without TLS in that mode.
+    const scheme = port === 8883 ? 'mqtts' : 'mqtt';
+    if (scheme === 'mqtts' && rejectUnauthorized) {
       tlsOptions.ca = fs.readFileSync(caPath);
       tlsOptions.servername = host;
     }
 
-    this.client = mqtt.connect(`mqtts://${host}:${port}`, tlsOptions);
+    this.client = mqtt.connect(`${scheme}://${host}:${port}`, tlsOptions);
 
     this.client.on('connect', () => {
       this.logger.log('Connected to Mosquitto');

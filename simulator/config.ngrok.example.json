@@ -1,0 +1,15 @@
+{
+  "deviceId": "bus-ba2kha4521-door-PHONE2",
+  "deviceSecret": "<from setup_phone.sh or /devices/register>",
+  "apiBaseUrl": "https://<your-ngrok-subdomain>.ngrok-free.app",
+  "broker": {
+    "host": "<your-ngrok-tcp-host>.tcp.ngrok.io",
+    "port": 12345,
+    "username": "<deviceId>",
+    "password": "<deviceSecret>",
+    "caCert": ""
+  },
+  "topic": "saferide/hardware/{deviceId}/attendance",
+  "counter": 0,
+  "faceMatchThreshold": 0.6
+}

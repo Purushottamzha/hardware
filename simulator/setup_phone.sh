@@ -23,7 +23,7 @@ echo ""
 
 # ---- 2. Python packages ----
 echo "[2/5] Installing Python packages..."
-pip install paho-mqtt pyzbar pillow qrcode --break-system-packages
+pip install paho-mqtt pillow requests --break-system-packages
 echo ""
 
 # ---- 3. Prompt for config ----
@@ -111,11 +111,11 @@ echo "============================================"
 echo ""
 echo "  Your phone is registered and ready."
 echo ""
-echo "  Every time you want to run the demo:"
-echo "    python continuous_scan.py"
+echo "  To run the face-attendance demo with a saved photo:"
+echo "    python simulate_tap.py --face-photo /sdcard/DCIM/student.jpg"
 echo ""
-echo "  For a single test scan:"
-echo "    python simulate_tap.py --token <student-token>"
+echo "  For a full tap (capture from camera, then identify):"
+echo "    python simulate_tap.py"
 echo ""
 echo "  IMPORTANT: The MQTT broker password for this device"
 echo "  must be set to the same deviceSecret. Ask your admin"

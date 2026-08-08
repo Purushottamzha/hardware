@@ -1,39 +1,37 @@
 # SafeRide Nepal — Demo Script
 
+> Face-recognition based school bus attendance and tracking system.
+> Students are identified by facial recognition; the QR flow has been removed.
+
 ## Prerequisites
 
 - Docker + Docker Compose installed
 - Python 3.8+ with `pip`
 - OpenSSL (for cert generation)
+- Native Windows face-service running on `127.0.0.1:5001` (`face-service/run_native.bat`, or
+  the Docker service if available)
 
 ## Setup
 
 ```bash
-# 1. Generate TLS certs and Mosquitto password file
-./setup-certs.sh
+# 1. Start the envelope (DB, MQTT, backend, dashboard, face-service)
+#    Native Windows stack:
+./ops/start-native-stack.bat
 
-# 2. Copy and configure environment
-cp .env.example .env
-# Edit .env:
-#   - Generate ENCRYPTION_KEY: openssl rand -hex 32
-#   - Generate JWT_SECRET: openssl rand -hex 32
-#   - Generate STUDENT_TOKEN_SECRET: openssl rand -hex 32
-#   - Set MOSQUITTO_PASSWORD (use the one printed by setup-certs.sh)
-
-# 3. Start everything
-docker-compose up
+#    Or Docker (if WSL/docker works):
+docker-compose up -d
 ```
+
+# 2. Enroll a student's face
+#    Dashboard → Students → click "Face" next to a student → upload a photo
 
 ## Demo Scenarios
 
 ### 1. Normal Tap (Happy Path)
 
 ```bash
-# Generate a student QR token
-python simulator/generate_student_qr.py <student-id> --token <admin-jwt>
-
-# Simulate a normal tap
-python simulator/simulate_tap.py --qr-file qr_student.png
+# Simulate a face-recognition tap (face photo identifies the student)
+python simulator/simulate_tap.py --face-photo /path/to/enrolled-face.jpg
 ```
 
 **Expected:** Green checkmark on Live Feed within ~1 second.
@@ -41,7 +39,7 @@ python simulator/simulate_tap.py --qr-file qr_student.png
 ### 2. Tampered Signature
 
 ```bash
-python simulator/simulate_tap.py --qr-file qr_student.png --tamper
+python simulator/simulate_tap.py --face-photo /path/to/enrolled-face.jpg --tamper
 ```
 
 **Expected:** `INVALID_DEVICE_SIGNATURE` appears in Security Log.
@@ -50,7 +48,7 @@ python simulator/simulate_tap.py --qr-file qr_student.png --tamper
 
 ```bash
 # First, run a normal tap to capture a valid payload
-python simulator/simulate_tap.py --qr-file qr_student.png
+python simulator/simulate_tap.py --face-photo /path/to/enrolled-face.jpg
 
 # Then replay it verbatim
 python simulator/simulate_tap.py --replay
@@ -71,9 +69,8 @@ python simulator/simulate_tap.py --replay
 ### 5. Auto-Suspend on Abuse
 
 ```bash
-# Run --tamper 5 times within 5 minutes
 for i in 1 2 3 4 5; do
-  python simulator/simulate_tap.py --qr-file qr_student.png --tamper
+  python simulator/simulate_tap.py --face-photo /path/to/enrolled-face.jpg --tamper
   sleep 2
 done
 ```
@@ -91,11 +88,14 @@ done
 
 ## Verification Checklist
 
-- [ ] `docker-compose up` works with zero manual steps after `./setup-certs.sh`.
-- [ ] All MQTT traffic runs over TLS (port 8883, not 1883).
+- [ ] `docker-compose up` works with zero manual steps after cert setup.
+- [ ] MQTT traffic runs over TLS (port 8883, not 1883) when the broker
+      listens on 8883; for the ngrok demo the simulator uses plain MQTT
+      on a forwarded TCP port.
 - [ ] Dashboard is served over HTTPS/WSS.
 - [ ] Simulator publishes with `retain=False` (verify in Mosquitto logs).
-- [ ] Device secrets are encrypted at rest — query `SELECT * FROM "Device";` in
-      the database and confirm no plaintext secret.
-- [ ] AuditLog hash chain is verifiable — call `GET /audit/verify` to check.
+- [ ] Device secrets are encrypted at rest — `SELECT * FROM "Device";`
+      shows no plaintext secret.
+- [ ] AuditLog hash chain is verifiable — `GET /audit/verify`.
 - [ ] No secrets appear in `git log` or any committed file.
+- [ ] All attendance events recorded with `identMethod = 'FACE'`.

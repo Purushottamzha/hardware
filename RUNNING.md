@@ -5,7 +5,7 @@
 ## Prerequisites
 
 - **Docker + Docker Compose** (Docker Desktop on Windows/Mac, or docker-compose plugin on Linux)
-- **Python 3.8+** with `pip install requests qrcode[pil] paho-mqtt`
+- **Python 3.8+** with `pip install requests paho-mqtt`
 - **OpenSSL** on PATH (or use Git Bash / WSL on Windows — see cert step below)
 - Ports **443** (Caddy) and **8883** (Mosquitto) free on the host
 
@@ -48,7 +48,7 @@ Fill in every `=` value:
 
 ENCRYPTION_KEY=<32-byte-hex>       # AES-256-GCM key for device secrets at rest
 JWT_SECRET=<32-byte-hex>           # JWT signing key
-STUDENT_TOKEN_SECRET=<32-byte-hex> # HMAC key for student QR tokens
+STUDENT_TOKEN_SECRET=<32-byte-hex> # HMAC key for student attendance tokens
 
 # Password printed by setup-certs.sh for the 'backend' MQTT user:
 MOSQUITTO_PASSWORD=<from-setup-certs-sh>
@@ -140,13 +140,11 @@ curl -k -X POST https://localhost/api/students \
 
 Save the returned `id`.
 
-### 10. Generate a student QR token
+### 10. Enroll a student's face
 
-```bash
-python simulator/generate_student_qr.py <student-id> --token <admin-jwt>
-```
-
-This creates `qr_<student-id>.png` in the current directory.
+Faces are enrolled from the Dashboard → Students → click the **Face** button on a
+student row → upload a photo. The embedding is stored in the face-service's
+enrollment store (and mirrored to Postgres `FaceEmbedding`).
 
 ### 11. Configure the simulator
 
@@ -171,10 +169,10 @@ Create `simulator/config.json`:
 
 > This file is gitignored. Use `config.example.json` as a reference.
 
-### 12. Run a normal tap
+### 12. Run a normal tap (face)
 
 ```bash
-python simulator/simulate_tap.py --qr-file qr_<student-id>.png
+python simulator/simulate_tap.py --face-photo /path/to/enrolled-face.jpg
 ```
 
 Expected output:

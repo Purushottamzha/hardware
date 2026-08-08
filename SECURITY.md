@@ -8,8 +8,8 @@
 
 ### Untrusted Components
 - The network (MQTT and HTTP traffic can be intercepted)
-- Physical devices (an attacker may gain physical access to a bus-mounted ESP32 and extract flash contents)
-- QR codes (can be photographed and copied by anyone)
+- Physical devices (an attacker may gain physical access to a bus-mounted device and extract flash contents)
+- Face photos (an attacker could attempt to enroll or spoof a face image)
 
 ### Explicitly Not Defended Against (Known Limitations)
 - A well-resourced attacker with physical device access who extracts the device secret from flash
@@ -31,7 +31,7 @@ Events with timestamps more than 60 seconds from the server's clock are rejected
 Student attendance follows a strict state machine (NOT_BOARDED → BOARDED → ARRIVED_SCHOOL → DEPARTED → ARRIVED_HOME). Invalid transitions are rejected and logged.
 
 ### 5. Student Token Separation
-The device never holds `STUDENT_TOKEN_SECRET`. It decodes the QR and forwards the raw token to the backend, which is the sole verifier. A compromised device can only impersonate itself, not forge tokens for any student.
+The device never holds `STUDENT_TOKEN_SECRET`. It sends the face match result to the backend, which mints a signed, time-limited token (`/students/:id/face-token`, device-HMAC authenticated). The backend is the sole verifier. A compromised device can only impersonate itself, not forge tokens for any student or mint tokens for faces below the confidence threshold.
 
 ### 6. Auto-Suspend on Abuse
 If a device produces 5+ invalid signatures within 5 minutes, it is automatically suspended until an admin manually reactivates it.
@@ -74,8 +74,8 @@ Dashboard origin only, not `*`.
 ### 17. Hash-Chained Audit Log
 Each `AuditLog` row includes `prevHash` (hash of previous row) and `hash` (hash of content + prevHash). Tampering breaks the chain, detectable via `GET /audit/verify`.
 
-### 18. Photo-Verified Attendance (Detective Control)
-When a student taps, the device captures a photo (QVGA JPEG, ~5-15 KB). The attendance event is published immediately over MQTT (small, fast, reliable). The photo is uploaded separately via an authenticated HTTPS multipart POST to `POST /attendance/photo`, referenced by `deviceId` + `counter`. If the upload fails, the attendance event still lands — the photo is a best-effort secondary channel. Photos are served as static assets under `/photos/` and auto-deleted after a configurable retention window (default 30 days). This is a **detective** control: a cloned QR still verifies, but the photo lets an admin later detect anomalies (e.g., same card scanned on two buses simultaneously).
+### 18. Face-Verified Attendance (Detective Control)
+A student is identified by a facial-recognition match (a confidence score against enrolled embeddings). The device authenticates via device HMAC at both `/face/identify` and `/students/:id/face-token`; the backend re-checks the confidence threshold (`FACE_MATCH_THRESHOLD`, default 0.60) before minting a token. The attendance event is published immediately over MQTT (small, fast, reliable). Photo uploads, if any, are a best-effort secondary channel. This is a **detective** control: a misidentified face is still recorded with its confidence, letting an admin later review low-confidence matches.
 
 ### 19. Generic Error Responses
 `NODE_ENV=production` suppresses stack traces and internal error details.
@@ -118,7 +118,7 @@ detects incidents but does not enforce a documented response procedure.
 | **7.2 — Change management** | Image-based deploys (Docker); `docker-compose.prod.yml` is the sole production source of truth. |
 | **7.10 — Storage medium disposal** | `mosquitto_data` volume from old deployments wiped on `down -v`. Photo deletion job runs daily. |
 | **8.1 — Cryptographic controls** | AES-256-GCM (device secrets), HMAC-SHA256 (payload signatures + student tokens), bcrypt (passwords). |
-| **8.3 — Secure authentication** | JWT (admin), HMAC token (student QR), per-device MQTT password (`allow_anonymous false`). |
+| **8.3 — Secure authentication** | JWT (admin), HMAC device tokens + face-match confidence, per-device MQTT password (`allow_anonymous false`). |
 | **8.10 — Redundancy** | Backups stored off-host. Restore procedure tested via drill. |
 | **8.11 — Backup** | Nightly encrypted (`age`) `pg_dump` with 30-day rotation and off-host copy. |
 | **8.16 — Log retention** | `logrotate` caps backend logs at 30 daily rotations. Docker logs at 3 files × 10 MB. |

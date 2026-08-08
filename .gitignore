@@ -24,10 +24,8 @@ __pycache__/
 *.pyc
 .venv/
 venv/
-
-# QR output
-qr_*.png
-student_qr*.png
+native-venv/
+*.log
 
 # Simulator artifacts
 *.last_payload.json
@@ -42,9 +40,11 @@ phone-package/
 
 # Simulator config variants (example is tracked)
 simulator/config.*.json
-simulator/termux_config.json
 !simulator/config.example.json
-!simulator/termux_config.example.json
+!simulator/config.ngrok.example.json
+
+# Face-service runtime store (persisted enrollments) — regenerated on enroll
+face-service/enrollments.json
 
 # IDE
 .vscode/

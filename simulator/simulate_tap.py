@@ -1,15 +1,12 @@
 #!/usr/bin/env python3
 """
-SafeRide Nepal — Attendance Tap Simulator (Phase 1 + Offline Buffering)
+SafeRide Nepal — Face Attendance Tap Simulator (Phase 1 + Offline Buffering)
 
 Runs in Termux on Android or any Python 3 environment.
 
 Usage:
-    python simulate_tap.py
-    python simulate_tap.py --qr-file path/to/qr.png
-    python simulate_tap.py --token "base64token..."
-    python simulate_tap.py --face            # face identification flow
-    python simulate_tap.py --face-photo path/to/face.png
+    python simulate_tap.py --face-photo path/to/face.jpg   # face identification
+    python simulate_tap.py --token "base64token..."        # publish a pre-minted token
     python simulate_tap.py --tamper    # corrupts signature for attack simulation
     python simulate_tap.py --replay    # re-publishes last captured payload
     python simulate_tap.py --flush     # flush offline buffer
@@ -82,21 +79,6 @@ def capture_photo(output_path):
         return False
 
 
-def decode_qr(image_path):
-    """Decode QR code from image using pyzbar."""
-    try:
-        from PIL import Image
-        from pyzbar.pyzbar import decode
-
-        img = Image.open(image_path)
-        codes = decode(img)
-        if codes:
-            return codes[0].data.decode("utf-8")
-    except Exception as e:
-        print(f"[WARN] QR decode failed: {e}")
-    return None
-
-
 def get_gps_fix():
     """Get GPS fix via Termux:API location."""
     try:
@@ -138,15 +120,26 @@ def sign_payload(payload_without_sig, secret):
 
 
 def publish_mqtt(cfg, payload):
-    """Publish MQTT with TLS (port 8883) or plaintext (other ports)."""
+    """Publish MQTT.
+
+    TLS branch: the demo broker normally listens on 8883 (TLS with a local CA).
+    For the ngrok demo we expose PLAIN MQTT on 1883 via ``ngrok tcp 1883`` — the
+    forwarded port won't be 8883, so TLS is skipped entirely here (no tls_set).
+    This is an intentional scope decision: ``allow_anonymous false`` +
+    per-device password + HMAC-signed payloads still authorise/integrate the
+    link for the demo window. If you DO want TLS, set broker.port == 8883.
+    """
     client = mqtt.Client(
         client_id=f"sim-{cfg['deviceId']}-{int(time.time())}",
         callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
     )
-    use_tls = cfg["broker"].get("port") == 8883
+    use_tls = cfg["broker"].get("port") == 8883 and bool(cfg["broker"].get("caCert"))
     if use_tls:
+        print(f"[MQTT] TLS enabled (port {cfg['broker']['port']}, caCert set)")
         client.tls_set(cfg["broker"]["caCert"])
         client.tls_insecure_set(True)
+    else:
+        print(f"[MQTT] PLAIN (no TLS) on port {cfg['broker']['port']} — ngrok TCP demo branch")
     client.username_pw_set(cfg["broker"]["username"], cfg["broker"]["password"])
 
     try:
@@ -181,42 +174,6 @@ def sign_photo_upload(device_id, counter, photo_timestamp, secret):
         canonical.encode("utf-8"),
         hashlib.sha256,
     ).hexdigest()
-
-
-def upload_photo(cfg, photo_path, counter, tamper=False):
-    """Upload captured photo to backend via HTTP multipart POST, HMAC-signed."""
-    backend_url = cfg.get("apiBaseUrl")
-    if not backend_url:
-        print("[ERROR] apiBaseUrl not set in config.json. Add it: \"apiBaseUrl\": \"http://your-backend:3000\"")
-        return
-    photo_timestamp = int(time.time() * 1000)
-    sig = sign_photo_upload(cfg["deviceId"], counter, photo_timestamp, cfg["deviceSecret"])
-
-    if tamper:
-        sig = "0" * 64
-        print(f"[TAMPER] Photo signature corrupted: {sig[:16]}...")
-
-    try:
-        with open(photo_path, "rb") as f:
-            files = {"photo": f}
-            data = {
-                "deviceId": cfg["deviceId"],
-                "counter": str(counter),
-                "photoSignature": sig,
-                "photoTimestamp": str(photo_timestamp),
-            }
-            resp = requests.post(
-                f"{backend_url}/attendance/photo",
-                files=files,
-                data=data,
-                timeout=15,
-            )
-        if resp.status_code == 201 or resp.status_code == 200:
-            print(f"[OK] Photo uploaded: {resp.json().get('photoPath')}")
-        else:
-            print(f"[WARN] Photo upload failed ({resp.status_code}): {resp.text[:200]}")
-    except Exception as e:
-        print(f"[WARN] Photo upload error: {e}")
 
 
 def poll_status():
@@ -255,7 +212,7 @@ def flush_buffer_cmd(cfg):
 
 
 def build_payload(cfg, student_token, lat, lon, timestamp, counter):
-    """Build a signed attendance payload for MQTT (same shape as QR flow)."""
+    """Build a signed attendance payload for MQTT (same shape as the phone flow)."""
     payload_without_sig = {
         "deviceId": cfg["deviceId"],
         "studentToken": student_token,
@@ -268,7 +225,7 @@ def build_payload(cfg, student_token, lat, lon, timestamp, counter):
     return {**payload_without_sig, "signature": signature}
 
 
-def identify_face(cfg, photo_path, threshold=0.70):
+def identify_face(cfg, photo_path, threshold=0.60):
     """POST the face photo to /face/identify (same signing scheme as photo upload).
 
     Returns (student_id, confidence) or (None, 0.0). Threshold is applied here
@@ -312,7 +269,7 @@ def mint_face_token(cfg, student_id, confidence):
     """Mint a student token from a face match (same signing scheme as identify).
 
     NOTE: this advances the backend's lastSeenCounter to cfg['counter'], so the
-    follow-up MQTT publish MUST use a higher counter (see simulate_tap_face).
+    follow-up MQTT publish MUST use a higher counter.
     """
     counter = cfg["counter"]
     photo_timestamp = int(time.time() * 1000)
@@ -339,68 +296,6 @@ def mint_face_token(cfg, student_id, confidence):
         return None
 
 
-def simulate_tap_face(args, cfg):
-    """Face identification path: identify -> mint token -> publish via MQTT.
-
-    Counter sequencing (deliberate): this flow consumes TWO counter values per
-    successful tap — the mint advances the backend's lastSeenCounter to N, so
-    the MQTT attendance event must be published at N+1.
-    """
-    print("=" * 50)
-    print("SafeRide Nepal — Face Identification Tap")
-    print("=" * 50)
-
-    threshold = cfg.get("faceMatchThreshold", 0.70)
-    print(f"[FACE] Threshold: {threshold}")
-
-    photo_path = Path("/tmp/saferide_face.png")
-    if args.face_photo:
-        photo_path = Path(args.face_photo)
-        print(f"[OK] Using face photo: {photo_path}")
-    else:
-        if not capture_photo(photo_path):
-            print("[WARN] No face photo captured; cannot identify.")
-            return
-
-    # --- Identify (counter N; identify does not advance the server counter) ---
-    cfg["counter"] += 1
-    save_config(cfg)
-    print(f"[COUNTER] {cfg['counter']}")
-    student_id, confidence = identify_face(cfg, photo_path, threshold)
-    if not student_id:
-        print("[FACE] No match above threshold — skipping mint.")
-        return
-
-    # --- Mint token (counter N; advances server lastSeenCounter to N) ---
-    token = mint_face_token(cfg, student_id, confidence)
-    if not token:
-        print("[FACE] Token mint failed — aborting tap.")
-        return
-    print(f"[FACE] Token minted (len={len(token)})")
-
-    # --- Publish attendance event (counter N+1) ---
-    lat, lon = get_gps_fix()
-    print(f"[GPS] Lat: {lat:.4f}, Lon: {lon:.4f}")
-    cfg["counter"] += 1
-    save_config(cfg)
-    timestamp = int(time.time() * 1000)
-    payload = build_payload(cfg, token, lat, lon, timestamp, cfg["counter"])
-
-    if args.tamper:
-        print("\n[TAMPER MODE] Corrupting signature for attack simulation...")
-        payload["signature"] = "0" * 64
-        print(f"[TAMPER] Signature set to: {payload['signature'][:16]}...")
-
-    save_last_payload(payload)
-
-    print(f"\n--- Payload ---")
-    print(json.dumps(payload, indent=2))
-    print(f"--- Signature valid: {'NO (tampered)' if args.tamper else 'YES'} ---")
-
-    publish_with_buffer(cfg, payload)
-    poll_status()
-
-
 def simulate_tap(args):
     cfg = load_config()
 
@@ -411,12 +306,12 @@ def simulate_tap(args):
         cfg["counter"] = buffered_counter
         save_config(cfg)
 
-    print("=" * 50)
-    print("SafeRide Nepal — Attendance Tap")
-    print("=" * 50)
-
     # --- Flush buffer first ---
     flush_buffer_cmd(cfg)
+
+    print("=" * 50)
+    print("SafeRide Nepal — Face Attendance Tap")
+    print("=" * 50)
 
     # --- Replay mode ---
     if args.replay:
@@ -425,28 +320,33 @@ def simulate_tap(args):
         publish_mqtt(cfg, payload)
         return
 
-    # --- Capture photo ---
-    photo_path = Path("/tmp/saferide_qr.png")
-    capture_photo(photo_path)
+    threshold = cfg.get("faceMatchThreshold", 0.60)
 
-    # --- Decode QR ---
-    student_token = None
+    # --- Obtain the student token: minted from a face match, or pre-minted ---
     if args.token:
         student_token = args.token
         print(f"[OK] Using provided token (len={len(student_token)})")
-    elif args.qr_file:
-        student_token = decode_qr(args.qr_file)
-        if student_token:
-            print(f"[OK] QR decoded from {args.qr_file}")
-    elif photo_path.exists():
-        student_token = decode_qr(photo_path)
-        if student_token:
-            print(f"[OK] QR decoded from captured photo")
-        else:
-            print("[WARN] No QR found in photo. Using fallback token.")
     else:
-        print("[WARN] No token provided. Use --token <raw> or --qr-file <path>.")
-        return
+        photo_path = Path(args.face_photo or "/tmp/saferide_face.png")
+        if args.face_photo:
+            print(f"[OK] Using face photo: {photo_path}")
+        elif not capture_photo(photo_path):
+            print("[WARN] No face photo available. Use --face-photo <path> or --token <raw>.")
+            return
+        print(f"[FACE] Threshold: {threshold}")
+
+        print(f"[COUNTER] {cfg['counter'] + 1}")
+        cfg["counter"] += 1
+        save_config(cfg)
+        student_id, confidence = identify_face(cfg, photo_path, threshold)
+        if not student_id:
+            print("[FACE] No match above threshold — skipping mint.")
+            return
+        student_token = mint_face_token(cfg, student_id, confidence)
+        if not student_token:
+            print("[FACE] Token mint failed — aborting tap.")
+            return
+        print(f"[FACE] Token minted (len={len(student_token)})")
 
     # --- Get GPS ---
     lat, lon = get_gps_fix()
@@ -477,19 +377,13 @@ def simulate_tap(args):
     # --- Publish (with offline buffering) ---
     publish_with_buffer(cfg, payload)
 
-    # --- Upload photo (non-blocking, best-effort, HMAC-signed) ---
-    if photo_path and photo_path.exists():
-        upload_photo(cfg, photo_path, cfg["counter"], tamper=args.tamper)
-
     poll_status()
 
 
 def main():
-    parser = argparse.ArgumentParser(description="SafeRide Nepal Attendance Tap Simulator")
-    parser.add_argument("--qr-file", help="Path to QR code image file")
-    parser.add_argument("--token", help="Raw student token string")
-    parser.add_argument("--face", action="store_true", help="Use face identification flow instead of QR")
-    parser.add_argument("--face-photo", help="Path to face photo (with --face); defaults to camera capture")
+    parser = argparse.ArgumentParser(description="SafeRide Nepal Face Attendance Tap Simulator")
+    parser.add_argument("--face-photo", help="Path to face photo; defaults to device camera capture")
+    parser.add_argument("--token", help="Pre-minted student token to publish directly")
     parser.add_argument("--tamper", action="store_true", help="Corrupt signature for attack simulation")
     parser.add_argument("--replay", action="store_true", help="Re-publish last captured payload verbatim")
     parser.add_argument("--flush", action="store_true", help="Flush offline buffer and exit")
@@ -499,10 +393,6 @@ def main():
 
     if args.flush:
         flush_buffer_cmd(cfg)
-        return
-
-    if args.face:
-        simulate_tap_face(args, cfg)
         return
 
     simulate_tap(args)

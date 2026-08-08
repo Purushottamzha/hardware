@@ -32,6 +32,8 @@ interface LastEvent {
   flagged: boolean;
   flagReason: string | null;
   rejectionReason: string | null;
+  identMethod?: string | null;
+  identConfidence?: number | null;
 }
 
 interface StudentState {
@@ -70,6 +72,8 @@ interface AttendanceEventPayload {
   flagReason: string | null;
   rejectionReason: string | null;
   routeName?: string | null;
+  identMethod?: string | null;
+  identConfidence?: number | null;
 }
 
 function StateBadge({ state }: { state: string }) {
@@ -151,6 +155,23 @@ function StudentRow({ student, onSelectLocation, isSelected }: {
           <span style={{ fontSize: 14, fontWeight: 500, color: statusColor }}>{statusText}</span>
         </div>
       </td>
+      <td style={{ padding: '12px 16px' }}>
+        <span style={{
+          fontSize: 11,
+          padding: '2px 8px',
+          borderRadius: 10,
+          fontWeight: 600,
+          background: '#dcfce7',
+          color: '#15803d',
+        }}>
+          {student.lastEvent?.identMethod || 'FACE'}
+        </span>
+      </td>
+      <td style={{ padding: '12px 16px', fontSize: 13, fontFamily: 'monospace', color: '#0f766e' }}>
+        {student.lastEvent?.identConfidence != null
+          ? (student.lastEvent.identConfidence * 100).toFixed(1) + '%'
+          : '—'}
+      </td>
     </tr>
   );
 }
@@ -203,6 +224,10 @@ function TimelineModal({ studentId, studentName, onClose }: { studentId: string;
                       {STATE_LABELS[ev.eventType] || ev.eventType}
                       {!ev.verified && <span style={{ color: '#ef4444', marginLeft: 8, fontSize: 12 }}>(Rejected)</span>}
                       {ev.verified && ev.flagged && <span style={{ color: '#f59e0b', marginLeft: 8, fontSize: 12 }}>(Flagged: {ev.flagReason})</span>}
+                    </div>
+                    <div style={{ fontSize: 11, color: '#666' }}>
+                      Method: {ev.identMethod || 'FACE'}
+                      {ev.identConfidence != null && ` · Confidence: ${(ev.identConfidence * 100).toFixed(1)}%`}
                     </div>
                     {ev.lat && ev.lon && (
                       <div style={{ fontSize: 11, color: '#999' }}>{ev.lat.toFixed(4)}, {ev.lon.toFixed(4)}</div>
@@ -268,6 +293,8 @@ export function LiveFeed() {
               flagged: data.flagged,
               flagReason: data.flagReason,
               rejectionReason: data.rejectionReason,
+              identMethod: data.identMethod ?? 'FACE',
+              identConfidence: data.identConfidence ?? null,
             },
           };
         }
@@ -408,6 +435,8 @@ export function LiveFeed() {
               <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, fontSize: 13, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Arrival Time</th>
               <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, fontSize: 13, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Location</th>
               <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, fontSize: 13, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Status</th>
+              <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, fontSize: 13, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Method</th>
+              <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, fontSize: 13, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Confidence</th>
             </tr>
           </thead>
           <tbody>
@@ -425,7 +454,7 @@ export function LiveFeed() {
             ))}
             {students.length === 0 && (
               <tr>
-                <td colSpan={6} style={{ padding: '32px', textAlign: 'center', color: '#9ca3af' }}>
+                <td colSpan={8} style={{ padding: '32px', textAlign: 'center', color: '#9ca3af' }}>
                   No students registered yet.
                 </td>
               </tr>

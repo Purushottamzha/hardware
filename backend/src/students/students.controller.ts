@@ -169,16 +169,6 @@ export class StudentsController {
     }, user?.id);
   }
 
-  @Post(':id/token')
-  async generateToken(@Param('id') id: string, @CurrentUser() user: any) {
-    return this.studentsService.generateToken(id, user?.id);
-  }
-
-  @Post(':id/reissue-qr')
-  async reissueQr(@Param('id') id: string, @CurrentUser() user: any) {
-    return this.studentsService.reissueQr(id, user?.id);
-  }
-
   @Get('buses')
   async listBuses() {
     return this.studentsService.listBuses();
@@ -200,7 +190,7 @@ export class StudentsController {
   async enrollFace(@Param('id') id: string, @UploadedFile() file: any) {
     if (!file) throw new BadRequestException('Photo file required');
 
-    const result = await this.faceService.enroll(file.buffer, file.originalname || 'face.jpg');
+    const result = await this.faceService.enroll(file.buffer, file.originalname || 'face.jpg', id);
     if (!result.faceDetected || !result.embedding) {
       throw new BadRequestException('No face detected in photo');
     }
@@ -238,11 +228,8 @@ export class StudentsController {
 
     const student = await this.prisma.student.findUnique({ where: { id } });
     if (!student) throw new NotFoundException('Student not found');
-    if (student.qrRevoked) {
-      throw new ForbiddenException('Student attendance is revoked');
-    }
 
-    const threshold = parseFloat(process.env.FACE_MATCH_THRESHOLD || '0.70');
+    const threshold = parseFloat(process.env.FACE_MATCH_THRESHOLD || '0.60');
     if (dto.confidence < threshold) {
       throw new ForbiddenException('Face match confidence below threshold');
     }

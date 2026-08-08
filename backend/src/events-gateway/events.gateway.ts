@@ -33,6 +33,8 @@ export class EventsGateway implements OnGatewayInit {
     flagReason: string | null;
     rejectionReason: string | null;
     routeName: string | null;
+    identMethod?: string | null;
+    identConfidence?: number | null;
   }) {
     this.server?.emit('attendanceEvent', data);
   }

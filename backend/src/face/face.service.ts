@@ -1,10 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
 
-export interface FaceCandidate {
-  studentId: string;
-  embedding: number[];
-}
-
 export interface FaceEnrollResult {
   faceDetected: boolean;
   embedding: number[] | null;
@@ -25,7 +20,9 @@ export class FaceService {
   private readonly baseUrl: string;
 
   constructor() {
-    this.baseUrl = process.env.FACE_SERVICE_URL || 'http://face-service:8000';
+    // Native Windows face-service (see face-service/run_native.bat). Backend runs
+    // inside Docker, so it reaches the Windows host via host.docker.internal.
+    this.baseUrl = process.env.FACE_SERVICE_URL || 'http://host.docker.internal:5001';
   }
 
   private toBlob(photo: Buffer): Blob {
@@ -34,9 +31,10 @@ export class FaceService {
     return new Blob([copy.buffer as ArrayBuffer], { type: 'image/jpeg' });
   }
 
-  async enroll(photo: Buffer, filename: string): Promise<FaceEnrollResult> {
+  async enroll(photo: Buffer, filename: string, studentId?: string): Promise<FaceEnrollResult & { stored?: boolean; studentId?: string | null }> {
     const form = new FormData();
     form.append('photo', this.toBlob(photo), filename);
+    if (studentId) form.append('studentId', studentId);
 
     const res = await fetch(`${this.baseUrl}/enroll`, { method: 'POST', body: form });
     if (!res.ok) {
@@ -45,14 +43,17 @@ export class FaceService {
     return res.json();
   }
 
-  async identify(photo: Buffer, filename: string, candidates: FaceCandidate[]): Promise<FaceIdentifyResult> {
+  /**
+   * New self-contained contract: the face-service keeps its own enrollment
+   * store (populated via /enroll with studentId). Match just sends the photo.
+   */
+  async match(photo: Buffer, filename: string): Promise<FaceIdentifyResult> {
     const form = new FormData();
     form.append('photo', this.toBlob(photo), filename);
-    form.append('candidateEmbeddings', JSON.stringify(candidates));
 
-    const res = await fetch(`${this.baseUrl}/identify`, { method: 'POST', body: form });
+    const res = await fetch(`${this.baseUrl}/match`, { method: 'POST', body: form });
     if (!res.ok) {
-      throw new Error(`face-service /identify failed: ${res.status}`);
+      throw new Error(`face-service /match failed: ${res.status}`);
     }
     return res.json();
   }

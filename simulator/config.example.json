@@ -11,5 +11,5 @@
   },
   "topic": "saferide/hardware/{deviceId}/attendance",
   "counter": 0,
-  "faceMatchThreshold": 0.7
+  "faceMatchThreshold": 0.6
 }

@@ -1,5 +1,4 @@
 const fs = require('node:fs');
-const crypto = require('node:crypto');
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 
@@ -10,14 +9,6 @@ function loadSecret(name) {
     try { return fs.readFileSync(filePath, 'utf8').trim(); } catch {}
   }
   return process.env[name] || '';
-}
-
-function generateToken(studentId, name, tokenVersion) {
-  const secret = process.env.STUDENT_TOKEN_SECRET || loadSecret('STUDENT_TOKEN_SECRET') || 'dev-secret';
-  const payload = JSON.stringify({ studentId, name, issuedAt: Date.now(), tokenVersion });
-  const hmac = crypto.createHmac('sha256', secret).update(payload).digest('hex');
-  const token = Buffer.from(JSON.stringify({ payload, hmac })).toString('base64');
-  return { token, qrData: token };
 }
 
 // Distance from point to line segment (haversine approximation)
@@ -133,25 +124,19 @@ async function main() {
   if (existingCount === 0) {
     for (const s of BUS1_STUDENTS) {
       await prisma.student.create({
-        data: { ...s, busId: 'bus-01', guardianPhone: null, homeRadiusM: 150, currentState: 'NOT_BOARDED', qrRevoked: false, tokenVersion: 1 },
+        data: { ...s, busId: 'bus-01', guardianPhone: null, homeRadiusM: 150, currentState: 'NOT_BOARDED', tokenVersion: 1 },
       });
     }
 
     for (const s of BUS2_STUDENTS) {
       await prisma.student.create({
-        data: { ...s, busId: 'bus-02', guardianPhone: null, homeRadiusM: 150, currentState: 'NOT_BOARDED', qrRevoked: false, tokenVersion: 1 },
+        data: { ...s, busId: 'bus-02', guardianPhone: null, homeRadiusM: 150, currentState: 'NOT_BOARDED', tokenVersion: 1 },
       });
     }
     console.log('20 students created');
   } else {
     console.log('Students already exist (' + existingCount + '), skipping creation');
   }
-
-  const allStudents = await prisma.student.findMany();
-  for (const s of allStudents) {
-    generateToken(s.id, s.name, s.tokenVersion);
-  }
-  console.log('QR tokens generated for ' + allStudents.length + ' students');
 
   for (const bus of BUSES) {
     const busData = await prisma.bus.findUnique({

@@ -197,11 +197,6 @@ export class AttendanceService implements OnModuleInit {
       return { accepted: false, reason: 'UNKNOWN_STUDENT' };
     }
 
-    if (student.qrRevoked) {
-      await this.logSecurityEvent('QR_REVOKED', payload.deviceId, rawPayload);
-      return { accepted: false, reason: 'QR_REVOKED' };
-    }
-
     const tokenPayload = JSON.parse(Buffer.from(payload.studentToken, 'base64').toString('utf8'));
     const tokenData = JSON.parse(tokenPayload.payload);
     if (tokenData.tokenVersion && tokenData.tokenVersion !== student.tokenVersion) {
@@ -279,7 +274,7 @@ export class AttendanceService implements OnModuleInit {
         flagged,
         flagReason,
         rejectionReason,
-        identMethod: tokenData.identMethod || 'QR',
+        identMethod: tokenData.identMethod || 'FACE',
         identConfidence: tokenData.identConfidence ?? null,
       },
       include: { student: true, device: true },
@@ -311,6 +306,8 @@ export class AttendanceService implements OnModuleInit {
       flagReason: flagged ? flagReason ?? null : null,
       rejectionReason: rejectionReason ?? null,
       routeName: student.bus?.route?.name || null,
+      identMethod: event.identMethod || 'FACE',
+      identConfidence: event.identConfidence ?? null,
     });
 
     return { accepted: verified, reason: verified ? 'OK' : rejectionReason };
@@ -541,6 +538,8 @@ export class AttendanceService implements OnModuleInit {
             flagged: true,
             flagReason: true,
             rejectionReason: true,
+            identMethod: true,
+            identConfidence: true,
           },
         });
         return { ...s, lastEvent };
@@ -579,6 +578,8 @@ export class AttendanceService implements OnModuleInit {
         photoPath: true,
         resolved: true,
         resolutionNote: true,
+        identMethod: true,
+        identConfidence: true,
       },
     });
   }

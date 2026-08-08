@@ -69,8 +69,8 @@ services:
       - NODE_ENV=production
       - ADMIN_PHONE=${ADMIN_PHONE?}
       - ADMIN_PASSWORD_FILE=/run/secrets/admin_password
-      - FACE_SERVICE_URL=http://face-service:8000
-      - FACE_MATCH_THRESHOLD=${FACE_MATCH_THRESHOLD:-0.70}
+      - FACE_SERVICE_URL=http://host.docker.internal:5001
+      - FACE_MATCH_THRESHOLD=${FACE_MATCH_THRESHOLD:-0.60}
     volumes:
       - /etc/letsencrypt:/etc/letsencrypt:ro
     secrets:
@@ -84,18 +84,6 @@ services:
         condition: service_healthy
       mosquitto:
         condition: service_started
-    networks:
-      - internal
-    restart: unless-stopped
-
-  face-service:
-    build:
-      context: ./face-service
-      dockerfile: Dockerfile
-    environment:
-      - DEEPFACE_HOME=/models
-    volumes:
-      - deepface_models:/models
     networks:
       - internal
     restart: unless-stopped
@@ -117,7 +105,6 @@ volumes:
   mosquitto_data:
   caddy_data:
   caddy_config:
-  deepface_models:
 
 networks:
   internal:
